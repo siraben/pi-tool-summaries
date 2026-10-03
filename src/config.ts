@@ -1,8 +1,20 @@
 import type { SettingsManager } from "@earendil-works/pi-coding-agent";
 
+export const reasoningLevels = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+export type ReasoningLevel = (typeof reasoningLevels)[number];
+
 export interface Config {
   provider?: string;
   model?: string;
+  reasoning?: ReasoningLevel;
   timeoutMs: number;
   maxInputChars: number;
   maxTokens: number;
@@ -18,6 +30,7 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
   const value = raw as Record<string, unknown>;
   const allowed = [
     "model",
+    "reasoning",
     "timeoutMs",
     "maxInputChars",
     "maxTokens",
@@ -38,6 +51,13 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
       );
     return n;
   };
+  if (
+    value.reasoning !== undefined &&
+    !reasoningLevels.includes(value.reasoning as ReasoningLevel)
+  )
+    throw new Error(
+      `toolSummaries.reasoning must be one of: ${reasoningLevels.join(", ")}`,
+    );
   let provider: string | undefined;
   let model: string | undefined;
   if (value.model !== undefined && value.model !== "current") {
@@ -57,6 +77,7 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
   return {
     provider,
     model,
+    reasoning: value.reasoning as ReasoningLevel | undefined,
     timeoutMs: integer("timeoutMs", 8000, 100, 60000),
     maxInputChars: integer("maxInputChars", 24000, 100, 200000),
     maxTokens: integer("maxTokens", 220, 64, 1000),

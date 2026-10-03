@@ -6,7 +6,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { configFromSettings, type Config } from "./config.js";
 import { Summaries } from "./summaries.js";
-import { createGenerate } from "./provider.js";
+import { createGenerate, reasoningIssue } from "./provider.js";
 import { withSummary } from "./renderer.js";
 
 export default function plainToolSummaries(pi: ExtensionAPI): void {
@@ -78,13 +78,23 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         "Summary model unavailable; select a Pi model or check the explicit override";
       return;
     }
+    const issue = reasoningIssue(model, config.reasoning);
+    if (issue) {
+      summaries.lastIssue = issue;
+      return;
+    }
     // Capture this call's model now: later /model changes affect only later tool calls.
     summaries.start(
       event.toolCallId,
       event.toolName,
       event.args,
       ctx.signal,
-      createGenerate(ctx.modelRegistry, model, config.maxTokens),
+      createGenerate(
+        ctx.modelRegistry,
+        model,
+        config.maxTokens,
+        config.reasoning,
+      ),
     );
   });
   pi.on("session_shutdown", () => summaries?.dispose());
@@ -97,7 +107,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         ? `${model.provider}/${model.id}`
         : "no available model";
       ctx.ui.notify(
-        `Tool summaries: ${selection} (${config?.provider ? "override" : "current Pi model"}); ${status}${summaries?.lastIssue ? `\nLast fallback: ${summaries.lastIssue}` : ""}`,
+        `Tool summaries: ${selection} (${config?.provider ? "override" : "current Pi model"}); reasoning: ${config?.reasoning ?? "provider default"}; ${status}${summaries?.lastIssue ? `\nLast fallback: ${summaries.lastIssue}` : ""}`,
         "info",
       );
     },

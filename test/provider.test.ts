@@ -9,9 +9,11 @@ import { createGenerate, providerDefaults } from "../src/provider.js";
 
 test("Pi routes a summary through its native provider and authentication pipeline", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-provider-test-"));
+  let requests = 0;
   let received: { authorization?: string; body: any } | undefined;
   const summary = "I’ll read the source files and print their paths.";
   const server = createServer(async (request, response) => {
+    requests++;
     let body = "";
     for await (const part of request) body += part;
     received = {
@@ -134,6 +136,40 @@ test("Pi routes a summary through its native provider and authentication pipelin
       summary,
     );
     assert.deepEqual(received?.body.reasoning, { effort: "high" });
+    for (const reasoning of ["low", "off"] as const) {
+      assert.equal(
+        await createGenerate(
+          registry,
+          { ...model, samplingParams: { reasoning: { effort: "high" } } },
+          220,
+          reasoning,
+        )(input, AbortSignal.timeout(5000)),
+        summary,
+      );
+      assert.deepEqual(received?.body.reasoning, {
+        effort: reasoning === "off" ? "none" : reasoning,
+      });
+    }
+    const beforeUnsupported = requests;
+    await assert.rejects(
+      createGenerate(
+        registry,
+        { ...model, thinkingLevelMap: { off: null } },
+        220,
+        "off",
+      )(input, AbortSignal.timeout(5000)),
+      /does not support reasoning level off/,
+    );
+    await assert.rejects(
+      createGenerate(
+        registry,
+        model,
+        220,
+        "max",
+      )(input, AbortSignal.timeout(5000)),
+      /does not support reasoning level max/,
+    );
+    assert.equal(requests, beforeUnsupported);
     assert.equal(
       received?.body.max_tokens ?? received?.body.max_completion_tokens,
       220,

@@ -24,6 +24,7 @@ test("Pi settings merge global and trusted project namespaces and reload", async
       JSON.stringify({
         toolSummaries: {
           model: "global/model",
+          reasoning: "high",
           timeoutMs: 9000,
         },
       }),
@@ -33,12 +34,15 @@ test("Pi settings merge global and trusted project namespaces and reload", async
       JSON.stringify({
         toolSummaries: {
           model: "project/model",
+          reasoning: "off",
         },
       }),
     );
     assert.equal(load(false).provider, "global");
+    assert.equal(load(false).reasoning, "high");
     const trusted = load(true);
     assert.equal(trusted.provider, "project");
+    assert.equal(trusted.reasoning, "off");
     assert.equal(trusted.timeoutMs, 9000);
     await writeFile(
       projectFile,

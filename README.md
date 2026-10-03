@@ -23,12 +23,15 @@ Add `toolSummaries` to `~/.pi/agent/settings.json` (or your custom Pi agent dire
 ```json
 {
   "toolSummaries": {
-    "model": "openrouter/openai/gpt-6-luna"
+    "model": "openrouter/openai/gpt-6-luna",
+    "reasoning": "low"
   }
 }
 ```
 
-Omit `model` to follow the current Pi model, or set `"current"` to override a global selection. Requests use Pi’s provider and authentication, with the model/provider’s default reasoning behavior. Unavailable overrides never switch models.
+Omit `model` to follow the current Pi model, or set `"current"` to override a global selection. Requests use Pi’s provider and authentication. Unavailable overrides never switch models.
+
+Omit `reasoning` for provider defaults, or choose `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported levels keep the native call; `/tool-summaries` shows the reason.
 
 Optional settings: `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (220), and `concurrency` (2).
 

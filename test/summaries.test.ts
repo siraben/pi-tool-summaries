@@ -23,6 +23,19 @@ test("settings validate malformed limits and model references", () => {
     /Unknown/,
   );
   assert.throws(() => readConfig({ toolSummaries: { typo: true } }), /Unknown/);
+  assert.equal(readConfig({}).reasoning, undefined);
+  assert.equal(
+    readConfig({ toolSummaries: { reasoning: "off" } }).reasoning,
+    "off",
+  );
+  assert.equal(
+    readConfig({ toolSummaries: { reasoning: "high" } }).reasoning,
+    "high",
+  );
+  assert.throws(
+    () => readConfig({ toolSummaries: { reasoning: "ultra" } }),
+    /reasoning must/,
+  );
   const config = readConfig({
     toolSummaries: { model: "openrouter/openai/example" },
   });

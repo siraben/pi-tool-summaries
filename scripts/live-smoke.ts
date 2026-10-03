@@ -29,7 +29,12 @@ try {
     const start = Date.now();
     const signal = AbortSignal.timeout(config.timeoutMs);
     const summary = await Promise.race([
-      createGenerate(registry, model, config.maxTokens)(input, signal),
+      createGenerate(
+        registry,
+        model,
+        config.maxTokens,
+        config.reasoning,
+      )(input, signal),
       new Promise<never>((_, reject) =>
         signal.addEventListener("abort", () => reject(new Error("timeout")), {
           once: true,

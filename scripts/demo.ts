@@ -69,7 +69,7 @@ if (!once && !process.stdin.isTTY) {
 const ui = once ? undefined : new TuiMainScreen(new ProcessTerminal());
 const summaries = new Summaries(
   config,
-  createGenerate(registry, model, config.maxTokens),
+  createGenerate(registry, model, config.maxTokens, config.reasoning),
 );
 const original = createBashToolDefinition(process.cwd(), {
   exposeSessionEnvironment: false,
