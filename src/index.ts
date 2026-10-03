@@ -1,11 +1,5 @@
 import {
   createBashToolDefinition,
-  createReadToolDefinition,
-  createWriteToolDefinition,
-  createEditToolDefinition,
-  createGrepToolDefinition,
-  createFindToolDefinition,
-  createLsToolDefinition,
   SettingsManager,
   type ExtensionAPI,
   type ExtensionContext,
@@ -17,7 +11,7 @@ import { withSummary } from "./renderer.js";
 
 export default function plainToolSummaries(pi: ExtensionAPI): void {
   let summaries: Summaries | undefined;
-  const registered = new Set<string>();
+  let registered = false;
   let status = "Not initialized";
   let config: Config | undefined;
   const summaryModel = (ctx: ExtensionContext) =>
@@ -29,7 +23,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
     summaries?.dispose();
     summaries = undefined;
     config = undefined;
-    registered.clear();
+    registered = false;
     if (ctx.mode !== "tui") {
       status = "Disabled outside interactive mode";
       return;
@@ -48,40 +42,32 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       throw new Error("No summary model selected");
     });
 
-    const definitions = {
-      bash: createBashToolDefinition(ctx.cwd, {
-        commandPrefix: settings.getShellCommandPrefix(),
-        shellPath: settings.getShellPath(),
-      }),
-      read: createReadToolDefinition(ctx.cwd, {
-        autoResizeImages: settings.getImageAutoResize(),
-      }),
-      write: createWriteToolDefinition(ctx.cwd),
-      edit: createEditToolDefinition(ctx.cwd),
-      grep: createGrepToolDefinition(ctx.cwd),
-      find: createFindToolDefinition(ctx.cwd),
-      ls: createLsToolDefinition(ctx.cwd),
-    };
-    const active = new Set(pi.getActiveTools());
-    const tools = pi.getAllTools();
-    for (const name of config.tools) {
-      // Do not enable disabled tools or overwrite sandbox/SSH/custom extension tools.
-      if (
-        !active.has(name) ||
-        tools.find((t) => t.name === name)?.sourceInfo.source !== "builtin"
-      )
-        continue;
-      pi.registerTool(withSummary(definitions[name], summaries));
-      registered.add(name);
+    if (!pi.getActiveTools().includes("bash")) {
+      status = "Bash is inactive";
+      return;
     }
-    status = `tools: ${[...registered].join(", ") || "none"}`;
+    if (
+      pi.getAllTools().find((t) => t.name === "bash")?.sourceInfo.source !==
+      "builtin"
+    ) {
+      status = "Skipped replacement Bash tool";
+      return;
+    }
+    const bash = createBashToolDefinition(ctx.cwd, {
+      commandPrefix: settings.getShellCommandPrefix(),
+      shellPath: settings.getShellPath(),
+    });
+    pi.registerTool(withSummary(bash, summaries));
+    registered = true;
+    status = "Bash summaries enabled";
   });
 
   pi.on("tool_execution_start", (event, ctx) => {
     // Pi 1.0 nested calls have no transcript row to display a summary in.
     if (
       ("parentToolCallId" in event && event.parentToolCallId) ||
-      !registered.has(event.toolName) ||
+      !registered ||
+      event.toolName !== "bash" ||
       !summaries ||
       !config
     )

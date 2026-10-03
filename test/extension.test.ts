@@ -25,7 +25,7 @@ test("Pi's extension loader loads the real TypeScript entry point", async () => 
   assert.ok(loaded.extensions[0].commands.has("tool-summaries"));
 });
 
-test("extension preserves active tools, skips overrides, uses registry auth path, and respects shell settings", async () => {
+test("extension wraps only Bash, uses registry auth, and respects shell settings", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-summary-extension-"));
   const agentDir = join(cwd, "agent");
   await mkdir(agentDir);
@@ -35,7 +35,6 @@ test("extension preserves active tools, skips overrides, uses registry auth path
       shellCommandPrefix: "export FROM_PI_SETTINGS=preserved",
       toolSummaries: {
         model: "test-provider/test-cheap-model",
-        tools: ["bash", "read", "write"],
       },
     }),
   );
@@ -58,12 +57,12 @@ test("extension preserves active tools, skips overrides, uses registry auth path
       registered.set(tool.name, tool);
     },
     getActiveTools() {
-      return ["bash", "read"];
+      return ["bash", "read", "write", "edit", "grep", "find", "ls"];
     },
     getAllTools() {
       return [
         { name: "bash", sourceInfo: { source: "builtin" } },
-        { name: "read", sourceInfo: { source: "extension" } },
+        { name: "read", sourceInfo: { source: "builtin" } },
         { name: "write", sourceInfo: { source: "builtin" } },
       ];
     },
@@ -78,7 +77,11 @@ test("extension preserves active tools, skips overrides, uses registry auth path
       getSessionFile: () => undefined,
     },
     getThinkingLevel: () => "off",
-    ui: { notify() {} },
+    ui: {
+      notify() {
+        assert.fail("No unsolicited notifications");
+      },
+    },
     modelRegistry: {
       find(provider: string, id: string) {
         assert.equal(provider, "test-provider");
@@ -157,7 +160,11 @@ test("default follows the current Pi model and captures it independently for eac
     mode: "tui",
     model: first as typeof first | undefined,
     isProjectTrusted: () => false,
-    ui: { notify() {} },
+    ui: {
+      notify() {
+        assert.fail("No unsolicited notifications");
+      },
+    },
     modelRegistry: {
       find(_provider: string, _id: string) {
         lookupCount++;
@@ -250,6 +257,90 @@ test("default follows the current Pi model and captures it independently for eac
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("inactive or replaced Bash and invalid settings fail open silently", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-summary-fallback-"));
+  const saved = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = cwd;
+  try {
+    for (const scenario of ["inactive", "replacement", "invalid"]) {
+      await writeFile(
+        join(cwd, "settings.json"),
+        JSON.stringify({
+          toolSummaries: scenario === "invalid" ? { model: 42 } : {},
+        }),
+      );
+      const handlers = new Map<string, Function>();
+      let statusCommand: Function | undefined;
+      const notifications: string[] = [];
+      const api = {
+        on(name: string, handler: Function) {
+          handlers.set(name, handler);
+        },
+        registerCommand(_name: string, definition: { handler: Function }) {
+          statusCommand = definition.handler;
+        },
+        registerTool() {
+          assert.fail("Must not replace the original tool");
+        },
+        getActiveTools() {
+          return scenario === "inactive" ? ["read"] : ["bash"];
+        },
+        getAllTools() {
+          return [
+            {
+              name: "bash",
+              sourceInfo: {
+                source: scenario === "replacement" ? "extension" : "builtin",
+              },
+            },
+          ];
+        },
+      };
+      const ctx = {
+        cwd,
+        mode: "tui",
+        isProjectTrusted: () => false,
+        ui: {
+          notify(text: string) {
+            notifications.push(text);
+          },
+        },
+        modelRegistry: {
+          find() {
+            assert.fail("No provider lookup expected");
+          },
+        },
+      };
+      extension(api as unknown as ExtensionAPI);
+      handlers.get("session_start")!({}, ctx);
+      handlers.get("tool_execution_start")!(
+        {
+          toolName: "bash",
+          toolCallId: scenario,
+          args: { command: "printf unchanged" },
+        },
+        ctx,
+      );
+      assert.deepEqual(notifications, []);
+      await statusCommand!("", ctx);
+      assert.equal(notifications.length, 1);
+      assert.match(
+        notifications[0],
+        scenario === "inactive"
+          ? /inactive/
+          : scenario === "replacement"
+            ? /replacement/
+            : /toolSummaries.model/,
+      );
+      handlers.get("session_shutdown")!({}, ctx);
+    }
+  } finally {
+    if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = saved;
     await rm(cwd, { recursive: true, force: true });
   }
 });

@@ -1,19 +1,8 @@
 import type { SettingsManager } from "@earendil-works/pi-coding-agent";
 
-export const toolNames = [
-  "bash",
-  "read",
-  "edit",
-  "write",
-  "grep",
-  "find",
-  "ls",
-] as const;
-export type SummaryTool = (typeof toolNames)[number];
 export interface Config {
   provider?: string;
   model?: string;
-  tools: SummaryTool[];
   timeoutMs: number;
   maxInputChars: number;
   maxTokens: number;
@@ -29,7 +18,6 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
   const value = raw as Record<string, unknown>;
   const allowed = [
     "model",
-    "tools",
     "timeoutMs",
     "maxInputChars",
     "maxTokens",
@@ -50,11 +38,6 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
       );
     return n;
   };
-  const tools = value.tools ?? toolNames;
-  if (!Array.isArray(tools) || tools.some((t) => !toolNames.includes(t)))
-    throw new Error(
-      `toolSummaries.tools must contain only: ${toolNames.join(", ")}`,
-    );
   let provider: string | undefined;
   let model: string | undefined;
   if (value.model !== undefined && value.model !== "current") {
@@ -74,7 +57,6 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
   return {
     provider,
     model,
-    tools: [...new Set(tools)] as SummaryTool[],
     timeoutMs: integer("timeoutMs", 8000, 100, 60000),
     maxInputChars: integer("maxInputChars", 24000, 100, 200000),
     maxTokens: integer("maxTokens", 220, 64, 1000),
@@ -90,7 +72,7 @@ export function configFromSettings(settings: SettingsManager): Config {
     .toolSummaries;
   const project = (settings.getProjectSettings() as { toolSummaries?: unknown })
     .toolSummaries;
-  // Validate each namespace before merging; all settings are scalars or arrays.
+  // Validate each namespace before merging; all settings are scalar values.
   readConfig({ toolSummaries: global });
   readConfig({ toolSummaries: project });
   return readConfig({

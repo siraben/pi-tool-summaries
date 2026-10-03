@@ -2,7 +2,7 @@
 
 Plain-language summaries of tool calls.
 
-Collapsed calls show what the agent intends to do: “I’ll search the TypeScript files for `oldApi` and print the matches.” Press **Ctrl+O** to see the entire original command, including multiline scripts and heredocs.
+Collapsed Bash calls show what the agent intends to do: “I’ll search the TypeScript files for `oldApi` and print the matches.” Press **Ctrl+O** to see the entire original command, including multiline scripts and heredocs.
 
 Summaries run in the background using **your currently selected Pi model**. Tool execution and native results stay unchanged. While a summary is pending or unavailable, the original call remains visible.
 
@@ -30,10 +30,10 @@ Add `toolSummaries` to `~/.pi/agent/settings.json` (or your custom Pi agent dire
 
 Omit `model` to follow the current Pi model, or set `"current"` to override a global selection. Requests use Pi’s provider and authentication, with the model/provider’s default reasoning behavior. Unavailable overrides never switch models.
 
-Optional settings: `tools` (array, default all seven built-in tools), `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (220), and `concurrency` (2).
+Optional settings: `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (220), and `concurrency` (2).
 
-Only visible, active built-in tool calls in interactive Pi sessions are summarized; nested calls and existing extension overrides are skipped. Busy, oversized, or failed requests keep the original view. Summaries are cached in memory, so reopening a session shows original calls. Ctrl+O never makes another request.
+Only visible built-in Bash calls in interactive Pi sessions are summarized. Nested calls and replacement Bash tools are skipped. Busy, oversized, or failed requests keep the original view. Summaries are cached in memory, so reopening a session shows original calls. Ctrl+O never makes another request.
 
-Summary requests send the selected tool’s arguments, including commands and supplied edit/write content, to the selected provider and incur its normal cost.
+Summary requests send the selected tool’s arguments, including the full command, to the selected provider and incur its normal cost.
 
 MIT

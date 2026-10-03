@@ -8,7 +8,7 @@ const config = { ...readConfig({}), timeoutMs: 20 };
 const args = { command: "find src -name '*.ts' -print" };
 const tick = () => delay(5);
 
-test("settings validate malformed limits, tools, and model references", () => {
+test("settings validate malformed limits and model references", () => {
   assert.equal(readConfig({}).model, undefined);
   assert.throws(
     () => readConfig({ toolSummaries: { model: "cheap" } }),
@@ -19,14 +19,10 @@ test("settings validate malformed limits, tools, and model references", () => {
     /integer/,
   );
   assert.throws(
-    () => readConfig({ toolSummaries: { tools: ["exec"] } }),
-    /only/,
+    () => readConfig({ toolSummaries: { tools: ["bash"] } }),
+    /Unknown/,
   );
   assert.throws(() => readConfig({ toolSummaries: { typo: true } }), /Unknown/);
-  assert.deepEqual(
-    readConfig({ toolSummaries: { tools: ["bash", "bash"] } }).tools,
-    ["bash"],
-  );
   const config = readConfig({
     toolSummaries: { model: "openrouter/openai/example" },
   });

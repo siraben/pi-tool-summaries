@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { configFromSettings } from "../src/config.js";
 
-test("Pi settings merge global and trusted project namespaces, replace arrays, and reload", async () => {
+test("Pi settings merge global and trusted project namespaces and reload", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-summary-settings-"));
   const agentDir = join(root, "custom-agent");
   const cwd = join(root, "project");
@@ -25,7 +25,6 @@ test("Pi settings merge global and trusted project namespaces, replace arrays, a
         toolSummaries: {
           model: "global/model",
           timeoutMs: 9000,
-          tools: ["bash", "read"],
         },
       }),
     );
@@ -34,16 +33,13 @@ test("Pi settings merge global and trusted project namespaces, replace arrays, a
       JSON.stringify({
         toolSummaries: {
           model: "project/model",
-          tools: ["read"],
         },
       }),
     );
     assert.equal(load(false).provider, "global");
-    assert.deepEqual(load(false).tools, ["bash", "read"]);
     const trusted = load(true);
     assert.equal(trusted.provider, "project");
     assert.equal(trusted.timeoutMs, 9000);
-    assert.deepEqual(trusted.tools, ["read"]);
     await writeFile(
       projectFile,
       JSON.stringify({ toolSummaries: { model: "current" } }),
