@@ -31,13 +31,16 @@ test("extension preserves active tools, skips overrides, uses registry auth path
   await mkdir(agentDir);
   await writeFile(
     join(agentDir, "settings.json"),
-    JSON.stringify({ shellCommandPrefix: "export FROM_PI_SETTINGS=preserved" }),
+    JSON.stringify({
+      shellCommandPrefix: "export FROM_PI_SETTINGS=preserved",
+      toolSummaries: {
+        model: "test-provider/test-cheap-model",
+        tools: ["bash", "read", "write"],
+      },
+    }),
   );
   const overrides = {
     PI_CODING_AGENT_DIR: agentDir,
-    PI_TOOL_SUMMARY_PROVIDER: "test-provider",
-    PI_TOOL_SUMMARY_MODEL: "test-cheap-model",
-    PI_TOOL_SUMMARY_TOOLS: "bash,read,write",
   };
   const old = Object.fromEntries(
     Object.keys(overrides).map((k) => [k, process.env[k]]),
@@ -51,10 +54,6 @@ test("extension preserves active tools, skips overrides, uses registry auth path
       handlers.set(name, handler);
     },
     registerCommand() {},
-    registerFlag() {},
-    getFlag() {
-      return undefined;
-    },
     registerTool(tool: ToolDefinition<any, any, any>) {
       registered.set(tool.name, tool);
     },
@@ -93,10 +92,15 @@ test("extension preserves active tools, skips overrides, uses registry auth path
         assert.equal(context.tools, undefined);
         assert.ok(options.signal instanceof AbortSignal);
         assert.equal(options.cacheRetention, "none");
+        assert.equal(Object.hasOwn(options, "reasoning"), false);
+        assert.equal(options.reasoning, undefined);
         return {
           stopReason: "stop",
           content: [
-            { type: "text", text: "Print the configured shell prefix value." },
+            {
+              type: "text",
+              text: "Print the configured shell prefix value.",
+            },
           ],
         };
       },
@@ -145,7 +149,6 @@ test("default follows the current Pi model and captures it independently for eac
   process.env.PI_TOOL_SUMMARY_TOOLS = "bash";
   const handlers = new Map<string, Function>();
   const chosen: unknown[] = [];
-  let flag: string | undefined;
   let lookupCount = 0;
   const first = { provider: "provider-a", id: "first" };
   const second = { provider: "provider-b", id: "second" };
@@ -174,10 +177,6 @@ test("default follows the current Pi model and captures it independently for eac
       handlers.set(name, handler);
     },
     registerCommand() {},
-    registerFlag() {},
-    getFlag() {
-      return flag;
-    },
     registerTool() {},
     getActiveTools() {
       return ["bash"];
@@ -229,7 +228,10 @@ test("default follows the current Pi model and captures it independently for eac
     assert.equal(chosen.length, 2);
     // An unavailable explicit override must never silently spend on the main model.
     ctx.model = first;
-    flag = "unavailable/model";
+    await writeFile(
+      join(cwd, "settings.json"),
+      JSON.stringify({ toolSummaries: { model: "unavailable/model" } }),
+    );
     handlers.get("session_start")!({}, ctx);
     handlers.get("tool_execution_start")!(
       {

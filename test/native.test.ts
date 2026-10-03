@@ -6,15 +6,12 @@ import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
-import {
-  createBashToolDefinition,
-  type ExtensionToolContext,
-} from "@earendil-works/pi-coding-agent";
+import { createBashToolDefinition } from "@earendil-works/pi-coding-agent";
 import { readConfig } from "../src/config.js";
 import { Summaries } from "../src/summaries.js";
 import { withSummary } from "../src/renderer.js";
 
-// Internal imports are test-only: exercise the exact native component used by Pi 1.0.0.
+// Internal imports are test-only: exercise the exact native component used by the installed Pi release.
 const dist = dirname(
   fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")),
 );
@@ -51,7 +48,11 @@ test("native expansion preserves every line of a long command before and after a
   assert.equal(wrapped.renderResult, original.renderResult);
   assert.equal(wrapped.parameters, original.parameters);
   assert.equal(wrapped.promptSnippet, original.promptSnippet);
-  assert.equal(wrapped.outputSchema, original.outputSchema);
+  if ("outputSchema" in original)
+    assert.equal(
+      (wrapped as typeof original).outputSchema,
+      original.outputSchema,
+    );
   const row = new ToolExecutionComponent(
     "bash",
     "native",
@@ -117,33 +118,38 @@ test("wrapped native execution keeps cwd, prefix, output, failures and abort sem
       { command: 'printf "%s" "$SUMMARY_TEST_PREFIX" > marker; cat marker' },
       undefined,
       undefined,
-      {} as ExtensionToolContext,
+      {} as Parameters<typeof wrapped.execute>[4],
     );
     assert.equal(await readFile(join(cwd, "marker"), "utf8"), "kept");
     assert.deepEqual(result.content, [{ type: "text", text: "kept" }]);
-    const failure = await wrapped.execute(
-      "fail",
-      { command: "exit 7" },
-      undefined,
-      undefined,
-      {} as ExtensionToolContext,
-    );
-    assert.equal(failure.isError, true);
-    assert.equal(
-      (failure.structuredContent as { exit_code: number }).exit_code,
-      7,
-    );
-    assert.equal(failure.content[0].type, "text");
-    if (failure.content[0].type === "text")
-      assert.match(failure.content[0].text, /code 7/);
-    assert.equal(
-      (result.structuredContent as { exit_code: number }).exit_code,
-      0,
-    );
-    assert.equal(
-      (result.structuredContent as { output: string }).output,
-      "kept",
-    );
+    const failureCall = () =>
+      wrapped.execute(
+        "fail",
+        { command: "exit 7" },
+        undefined,
+        undefined,
+        {} as Parameters<typeof wrapped.execute>[4],
+      );
+    if ("structuredContent" in result) {
+      const failure = await failureCall();
+      assert.equal((failure as { isError?: boolean }).isError, true);
+      assert.equal(
+        (failure as unknown as { structuredContent: { exit_code: number } })
+          .structuredContent.exit_code,
+        7,
+      );
+      assert.equal(
+        (result.structuredContent as { exit_code: number }).exit_code,
+        0,
+      );
+      assert.equal(
+        (result.structuredContent as { output: string }).output,
+        "kept",
+      );
+    } else {
+      // Pre-1.0 native Bash reports a nonzero exit by rejecting.
+      await assert.rejects(failureCall(), /code 7/);
+    }
     const controller = new AbortController();
     controller.abort();
     await assert.rejects(
@@ -152,7 +158,7 @@ test("wrapped native execution keeps cwd, prefix, output, failures and abort sem
         { command: "sleep 10" },
         controller.signal,
         undefined,
-        {} as ExtensionToolContext,
+        {} as Parameters<typeof wrapped.execute>[4],
       ),
       /abort/i,
     );

@@ -1,10 +1,13 @@
+import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { readConfig } from "../src/config.js";
+import { configFromSettings } from "../src/config.js";
 import { createGenerate } from "../src/provider.js";
 import { cleanSummary } from "../src/summaries.js";
 
 try {
-  const config = readConfig();
+  const config = configFromSettings(
+    SettingsManager.create(process.cwd(), undefined, { projectTrusted: false }),
+  );
   if (!config.provider || !config.model) throw new Error("configuration");
   const runtime = await ModelRuntime.create({ allowModelNetwork: false });
   const registry = new ModelRegistry(runtime);

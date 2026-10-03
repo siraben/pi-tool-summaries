@@ -1,3 +1,4 @@
+import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
@@ -13,7 +14,7 @@ import {
   matchesKey,
   setKeybindings,
 } from "@earendil-works/pi-tui";
-import { readConfig } from "../src/config.js";
+import { configFromSettings } from "../src/config.js";
 import { createGenerate } from "../src/provider.js";
 import { Summaries } from "../src/summaries.js";
 import { withSummary } from "../src/renderer.js";
@@ -35,7 +36,9 @@ const { KeybindingsManager } = await import(
 );
 setKeybindings(new KeybindingsManager());
 
-const config = readConfig();
+const config = configFromSettings(
+  SettingsManager.create(process.cwd(), undefined, { projectTrusted: false }),
+);
 const runtime = await ModelRuntime.create({ allowModelNetwork: false });
 const registry = new ModelRegistry(runtime);
 const model =

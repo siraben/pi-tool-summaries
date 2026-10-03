@@ -8,17 +8,34 @@ const config = { ...readConfig({}), timeoutMs: 20 };
 const args = { command: "find src -name '*.ts' -print" };
 const tick = () => delay(5);
 
-test("configuration is explicit and validates malformed limits/models", () => {
+test("settings validate malformed limits, tools, and model references", () => {
   assert.equal(readConfig({}).model, undefined);
-  assert.throws(() => readConfig({ PI_TOOL_SUMMARY_MODEL: "cheap" }), /both/);
   assert.throws(
-    () => readConfig({ PI_TOOL_SUMMARY_TIMEOUT_MS: "NaN" }),
+    () => readConfig({ toolSummaries: { model: "cheap" } }),
+    /provider/,
+  );
+  assert.throws(
+    () => readConfig({ toolSummaries: { timeoutMs: "8000" } }),
     /integer/,
   );
-  assert.throws(() => readConfig({ PI_TOOL_SUMMARY_TOOLS: "exec" }), /only/);
-  assert.deepEqual(readConfig({ PI_TOOL_SUMMARY_TOOLS: "bash,bash" }).tools, [
-    "bash",
-  ]);
+  assert.throws(
+    () => readConfig({ toolSummaries: { tools: ["exec"] } }),
+    /only/,
+  );
+  assert.throws(() => readConfig({ toolSummaries: { typo: true } }), /Unknown/);
+  assert.deepEqual(
+    readConfig({ toolSummaries: { tools: ["bash", "bash"] } }).tools,
+    ["bash"],
+  );
+  const config = readConfig({
+    toolSummaries: { model: "openrouter/openai/example" },
+  });
+  assert.equal(config.provider, "openrouter");
+  assert.equal(config.model, "openai/example");
+  assert.equal(
+    readConfig({ toolSummaries: { model: "current" } }).model,
+    undefined,
+  );
 });
 
 test("requests are asynchronous, deduplicated, and tied to exact call arguments", async () => {
@@ -111,21 +128,4 @@ test("session disposal and parent cancellation prevent late UI updates", async (
 
 test("model text cannot inject terminal escapes or bidirectional controls", () => {
   assert.equal(cleanSummary("\x1b[31mRead\x1b[0m\nfiles\u202e"), "Read files");
-});
-
-test("Pi flag accepts provider/model IDs with slashes and overrides legacy environment selection", () => {
-  const env = {
-    PI_TOOL_SUMMARY_PROVIDER: "legacy",
-    PI_TOOL_SUMMARY_MODEL: "old",
-  };
-  const override = readConfig(env, "openrouter/openai/gpt-6-luna");
-  assert.equal(override.provider, "openrouter");
-  assert.equal(override.model, "openai/gpt-6-luna");
-  assert.equal(readConfig(env, "current").provider, undefined);
-  assert.equal(readConfig(env, "current").model, undefined);
-  assert.throws(
-    () => readConfig(env, "model-without-provider"),
-    /provider\/model-id/,
-  );
-  assert.throws(() => readConfig(env, "openrouter/"), /provider\/model-id/);
 });

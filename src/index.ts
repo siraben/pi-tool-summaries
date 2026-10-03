@@ -10,7 +10,7 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { readConfig, type Config } from "./config.js";
+import { configFromSettings, type Config } from "./config.js";
 import { Summaries } from "./summaries.js";
 import { createGenerate } from "./provider.js";
 import { withSummary } from "./renderer.js";
@@ -20,10 +20,6 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
   const registered = new Set<string>();
   let status = "Not initialized";
   let config: Config | undefined;
-  pi.registerFlag("tool-summary-model", {
-    description: "Summary model: current (default) or provider/model-id",
-    type: "string",
-  });
   const summaryModel = (ctx: ExtensionContext) =>
     config?.provider && config.model
       ? ctx.modelRegistry.find(config.provider, config.model)
@@ -38,31 +34,20 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       status = "Disabled outside interactive mode";
       return;
     }
+    // Use Pi's own merge, agent-directory resolution, and project-trust rules.
+    const settings = SettingsManager.create(ctx.cwd, undefined, {
+      projectTrusted: ctx.isProjectTrusted(),
+    });
     try {
-      config = readConfig(
-        process.env,
-        pi.getFlag("tool-summary-model") as string | undefined,
-      );
+      config = configFromSettings(settings);
     } catch (error) {
       status = error instanceof Error ? error.message : "Invalid configuration";
-      const model = summaryModel(ctx);
-      const selection = model
-        ? `${model.provider}/${model.id}`
-        : "no available model";
-      ctx.ui.notify(
-        `Tool summaries: ${selection} (${config?.provider ? "override" : "current Pi model"}); ${status}`,
-        "warning",
-      );
       return;
     }
     summaries = new Summaries(config, async () => {
       throw new Error("No summary model selected");
     });
 
-    // Mirror the CLI's native factory options, including project trust and custom agent directory.
-    const settings = SettingsManager.create(ctx.cwd, undefined, {
-      projectTrusted: ctx.isProjectTrusted(),
-    });
     const definitions = {
       bash: createBashToolDefinition(ctx.cwd, {
         commandPrefix: settings.getShellCommandPrefix(),
@@ -95,7 +80,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
   pi.on("tool_execution_start", (event, ctx) => {
     // Pi 1.0 nested calls have no transcript row to display a summary in.
     if (
-      event.parentToolCallId ||
+      ("parentToolCallId" in event && event.parentToolCallId) ||
       !registered.has(event.toolName) ||
       !summaries ||
       !config

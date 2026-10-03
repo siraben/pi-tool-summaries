@@ -19,3 +19,18 @@ jobs:
       - run: npm run format:check
       - run: npm run check
       - run: npm test
+  compatibility:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pi: [0.84.4, 0.99.2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npx --yes npm@12.2.0 ci --ignore-scripts
+      - run: npx --yes npm@12.2.0 install --ignore-scripts --no-save --package-lock=false @earendil-works/pi-coding-agent@${{ matrix.pi }} @earendil-works/pi-tui@${{ matrix.pi }}
+      - run: npm run check
+      - run: npm test

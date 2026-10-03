@@ -17,8 +17,8 @@
     "format:check": "prettier --check src test scripts package.json tsconfig.json README.md .github"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "^1.0.0",
-    "@earendil-works/pi-tui": "^1.0.0"
+    "@earendil-works/pi-coding-agent": ">=0.84.4 <2",
+    "@earendil-works/pi-tui": ">=0.84.4 <2"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.0.0",

@@ -8,7 +8,7 @@ Summaries run in the background using **your currently selected Pi model**. Tool
 
 ## Install
 
-Requires **Pi 1.0.0** and Node 22.19+.
+Requires **Pi 0.84.4+** and Node 22.19+. Tested with Pi 0.84.4, 0.99.2, and 1.0.0.
 
 ```sh
 pi install git:github.com/siraben/pi-tool-summaries
@@ -16,30 +16,24 @@ pi install git:github.com/siraben/pi-tool-summaries
 
 Restart Pi or run `/reload`. Use `/tool-summaries` to inspect the effective model and status.
 
-## Model selection
+## Configuration
 
-The default follows Pi’s model selection for each new call. To use a separate model:
+Add `toolSummaries` to `~/.pi/agent/settings.json` (or your custom Pi agent directory). Trusted project `.pi/settings.json` values override global settings. Run `/reload` after editing.
 
-```sh
-pi --tool-summary-model openrouter/openai/gpt-6-luna
+```json
+{
+  "toolSummaries": {
+    "model": "openrouter/openai/gpt-6-luna"
+  }
+}
 ```
 
-Any model available through Pi’s registry can be used. Requests use Pi’s native provider and authentication infrastructure. Summary requests incur the selected model’s normal cost.
+Omit `model` to follow the current Pi model, or set `"current"` to override a global selection. Requests use Pi’s provider and authentication, with the model/provider’s default reasoning behavior. Unavailable overrides never switch models.
 
-For a persistent override, set both `PI_TOOL_SUMMARY_PROVIDER` and `PI_TOOL_SUMMARY_MODEL`. Precedence is **CLI flag → environment pair → current Pi model**. `--tool-summary-model current` ignores environment overrides. Unavailable overrides retain the original call rather than switching models.
-
-## Configuration and behavior
-
-| Environment variable              | Default                             |
-| --------------------------------- | ----------------------------------- |
-| `PI_TOOL_SUMMARY_TOOLS`           | `bash,read,edit,write,grep,find,ls` |
-| `PI_TOOL_SUMMARY_TIMEOUT_MS`      | `8000`                              |
-| `PI_TOOL_SUMMARY_MAX_INPUT_CHARS` | `24000`                             |
-| `PI_TOOL_SUMMARY_MAX_TOKENS`      | `220`                               |
-| `PI_TOOL_SUMMARY_CONCURRENCY`     | `2`                                 |
+Optional settings: `tools` (array, default all seven built-in tools), `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (220), and `concurrency` (2).
 
 Only visible, active built-in tool calls in interactive Pi sessions are summarized; nested calls and existing extension overrides are skipped. Busy, oversized, or failed requests keep the original view. Summaries are cached in memory, so reopening a session shows original calls. Ctrl+O never makes another request.
 
-Summary requests send the selected tool’s arguments, including commands and supplied edit/write content, to the selected provider.
+Summary requests send the selected tool’s arguments, including commands and supplied edit/write content, to the selected provider and incur its normal cost.
 
 MIT
