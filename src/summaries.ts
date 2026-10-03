@@ -1,3 +1,4 @@
+import { SummaryFailure } from "./failures.js";
 import { createHash } from "node:crypto";
 import { stripVTControlCharacters } from "node:util";
 import type { Config } from "./config.js";
@@ -73,21 +74,32 @@ export class Summaries {
       this.lastIssue =
         input.length > this.config.maxInputChars
           ? "Input exceeds configured limit"
-          : "Busy or cancelled";
+          : parentSignal?.aborted
+            ? "Summary cancelled before request"
+            : "Summary concurrency limit reached";
       return;
     }
     e.status = "pending";
     this.active++;
     const controller = new AbortController();
     this.controllers.add(controller);
-    const abort = () => controller.abort();
+    const abort = () =>
+      controller.abort(new SummaryFailure("Summary cancelled by parent"));
     parentSignal?.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(abort, this.config.timeoutMs);
+    const timer = setTimeout(
+      () =>
+        controller.abort(
+          new SummaryFailure(
+            `Summary timed out after ${this.config.timeoutMs} ms`,
+          ),
+        ),
+      this.config.timeoutMs,
+    );
     // Race the abort too: a provider that ignores cancellation cannot stall the cache.
     const cancelled = new Promise<never>((_, reject) => {
       controller.signal.addEventListener(
         "abort",
-        () => reject(new Error("Summary cancelled or timed out")),
+        () => reject(controller.signal.reason),
         { once: true },
       );
     });
@@ -97,16 +109,23 @@ export class Summaries {
     ])
       .then((text) => {
         const summary = cleanSummary(text);
-        if (!summary || summary.length > 2000)
-          throw new Error("Empty or oversized summary");
+        if (!summary)
+          throw new SummaryFailure(
+            "Summary response was empty or contained no usable text",
+          );
+        if (summary.length > 2000)
+          throw new SummaryFailure(
+            "Summary response exceeds the 2000-character display limit",
+          );
         e.summary = summary;
         e.status = "ready";
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         e.status = "unavailable";
-        // Never expose provider errors: they can contain request data or credentials.
         this.lastIssue =
-          "Summary unavailable (provider error, empty response, cancellation, or timeout)";
+          error instanceof SummaryFailure
+            ? error.message
+            : "Summary generation failed (unknown cause)";
       })
       .finally(() => {
         clearTimeout(timer);
@@ -119,6 +138,9 @@ export class Summaries {
 
   dispose(): void {
     this.entries.clear();
-    for (const controller of this.controllers) controller.abort();
+    for (const controller of this.controllers)
+      controller.abort(
+        new SummaryFailure("Summary cancelled on session shutdown"),
+      );
   }
 }

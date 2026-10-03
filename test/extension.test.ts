@@ -49,11 +49,16 @@ test("extension wraps only Bash, uses registry auth, and respects shell settings
   const handlers = new Map<string, Function>();
   const registered = new Map<string, ToolDefinition<any, any, any>>();
   let requests = 0;
+  let statusCommand: Function | undefined;
+  let reportStatus = false;
+  const notices: string[] = [];
   const api = {
     on(name: string, handler: Function) {
       handlers.set(name, handler);
     },
-    registerCommand() {},
+    registerCommand(_name: string, definition: { handler: Function }) {
+      statusCommand = definition.handler;
+    },
     registerTool(tool: ToolDefinition<any, any, any>) {
       registered.set(tool.name, tool);
     },
@@ -79,8 +84,9 @@ test("extension wraps only Bash, uses registry auth, and respects shell settings
     },
     getThinkingLevel: () => "off",
     ui: {
-      notify() {
-        assert.fail("No unsolicited notifications");
+      notify(text: string) {
+        assert.ok(reportStatus, "No unsolicited notifications");
+        notices.push(text);
       },
     },
     modelRegistry: {
@@ -91,6 +97,12 @@ test("extension wraps only Bash, uses registry auth, and respects shell settings
       },
       async complete(chosen: unknown, context: any, options: any) {
         requests++;
+        if (requests > 1)
+          return {
+            stopReason: "error",
+            errorMessage: "503 Bearer secret-value",
+            content: [],
+          };
         assert.equal(chosen, model);
         assert.equal(context.messages.length, 1);
         assert.equal(context.tools, undefined);
@@ -128,6 +140,19 @@ test("extension wraps only Bash, uses registry auth, and respects shell settings
     assert.deepEqual(result.content, [{ type: "text", text: "preserved" }]);
     await delay(5);
     assert.equal(requests, 1);
+    handlers.get("tool_execution_start")!(
+      { toolName: "bash", toolCallId: "failure", args },
+      ctx,
+    );
+    await delay(5);
+    assert.deepEqual(notices, []);
+    reportStatus = true;
+    await statusCommand!("", ctx);
+    assert.match(
+      notices[0],
+      /Last fallback: Provider\/API failure \(HTTP 503\)/,
+    );
+    assert.doesNotMatch(notices[0], /Bearer|secret-value/);
     handlers.get("session_shutdown")!({}, ctx);
   } finally {
     for (const [key, value] of Object.entries(old)) {

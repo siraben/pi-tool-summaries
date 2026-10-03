@@ -1,3 +1,4 @@
+import { SummaryFailure, providerFailure } from "./failures.js";
 import { randomUUID } from "node:crypto";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { ReasoningLevel } from "./config.js";
@@ -96,61 +97,76 @@ export function createGenerate(
       sessionId: randomUUID(),
     };
     let response;
-    if (reasoning === undefined) {
-      // Raw completion plus the payload hook preserves provider defaults, not implicit off.
-      response = await registry.complete(model, context, {
-        ...options,
-        onPayload: providerDefaults,
-      });
-    } else {
-      // Explicit levels use Pi's provider-neutral API. Do not let model sampling defaults
-      // overwrite the requested level at the end of request construction.
-      const samplingParams = { ...model.samplingParams };
-      for (const key of [
-        "reasoning",
-        "reasoning_effort",
-        "thinking",
-        "enable_thinking",
-        "chat_template_kwargs",
-        "chat_template_args",
-      ])
-        delete samplingParams[key];
-      const selected = { ...model, samplingParams };
-      const simpleOptions = {
-        ...options,
-        reasoning: reasoning === "off" ? undefined : reasoning,
-      };
-      type Provider = NonNullable<ReturnType<ModelRegistry["getProvider"]>>;
-      const simpleRegistry = registry as ModelRegistry & {
-        streamSimple?: Provider["streamSimple"];
-      };
-      if (simpleRegistry.streamSimple) {
-        response = await simpleRegistry
-          .streamSimple(selected, context, simpleOptions)
-          .result();
+    try {
+      if (reasoning === undefined) {
+        // Raw completion plus the payload hook preserves provider defaults, not implicit off.
+        response = await registry.complete(model, context, {
+          ...options,
+          onPayload: providerDefaults,
+        });
       } else {
-        // Pre-1.0 exposes provider dispatch and request-time authentication separately.
-        const provider = registry.getProvider(selected.provider);
-        const auth = await registry.getApiKeyAndHeaders(selected);
-        if (!provider || !auth.ok)
-          throw new Error("Summary provider unavailable");
-        signal.throwIfAborted();
-        response = await provider
-          .streamSimple(
-            auth.baseUrl ? { ...selected, baseUrl: auth.baseUrl } : selected,
-            context as unknown as Parameters<typeof provider.streamSimple>[1],
-            {
-              ...simpleOptions,
-              apiKey: auth.apiKey,
-              headers: auth.headers,
-              env: auth.env,
-            },
-          )
-          .result();
+        // Explicit levels use Pi's provider-neutral API. Do not let model sampling defaults
+        // overwrite the requested level at the end of request construction.
+        const samplingParams = { ...model.samplingParams };
+        for (const key of [
+          "reasoning",
+          "reasoning_effort",
+          "thinking",
+          "enable_thinking",
+          "chat_template_kwargs",
+          "chat_template_args",
+        ])
+          delete samplingParams[key];
+        const selected = { ...model, samplingParams };
+        const simpleOptions = {
+          ...options,
+          reasoning: reasoning === "off" ? undefined : reasoning,
+        };
+        type Provider = NonNullable<ReturnType<ModelRegistry["getProvider"]>>;
+        const simpleRegistry = registry as ModelRegistry & {
+          streamSimple?: Provider["streamSimple"];
+        };
+        if (simpleRegistry.streamSimple) {
+          response = await simpleRegistry
+            .streamSimple(selected, context, simpleOptions)
+            .result();
+        } else {
+          // Pre-1.0 exposes provider dispatch and request-time authentication separately.
+          const provider = registry.getProvider(selected.provider);
+          const auth = await registry.getApiKeyAndHeaders(selected);
+          if (!provider || !auth.ok)
+            throw new SummaryFailure("Provider/authentication unavailable");
+          signal.throwIfAborted();
+          response = await provider
+            .streamSimple(
+              auth.baseUrl ? { ...selected, baseUrl: auth.baseUrl } : selected,
+              context as unknown as Parameters<typeof provider.streamSimple>[1],
+              {
+                ...simpleOptions,
+                apiKey: auth.apiKey,
+                headers: auth.headers,
+                env: auth.env,
+              },
+            )
+            .result();
+        }
       }
+    } catch (error) {
+      if (signal.aborted) throw signal.reason;
+      if (error instanceof SummaryFailure) throw error;
+      if (error instanceof Error && error.name === "AbortError")
+        throw new SummaryFailure("Summary cancelled by provider", error);
+      throw providerFailure(error);
     }
-    if (["error", "aborted", "length"].includes(response.stopReason))
-      throw new Error("Incomplete summary");
+    if (signal.aborted) throw signal.reason;
+    if (response.stopReason === "error") throw providerFailure(response);
+    if (response.stopReason === "aborted")
+      throw new SummaryFailure("Summary cancelled by provider", response);
+    if (response.stopReason === "length")
+      throw new SummaryFailure(
+        "Summary response reached the output token limit",
+        response,
+      );
     return response.content
       .filter((c) => c.type === "text")
       .map((c) => c.text)
