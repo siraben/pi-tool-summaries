@@ -1,10 +1,8 @@
 # Pi Tool Summaries
 
+![Before: an excerpt of the TinyCC binary comparison command. After: its existing plain-language summary.](docs/before-after.svg)
+
 Plain-language summaries of tool calls.
-
-Collapsed Bash calls show what the agent intends to do: “Searching TypeScript files for `oldApi` and printing the matches.” Press **Ctrl+O** to see the entire original command, including multiline scripts and heredocs.
-
-Summaries run in the background using **your currently selected Pi model**. Tool execution and native results stay unchanged. While a summary is pending or unavailable, the original call remains visible.
 
 ## Install
 
@@ -19,8 +17,6 @@ Restart Pi or run `/reload`. Use `/tool-summaries` to inspect the effective mode
 ## Before and after
 
 The compiler-binary comparison below shows an existing command and its summary from this README.
-
-![Before: the full TinyCC binary comparison command. After: its existing plain-language summary.](docs/before-after.svg)
 
 Press **Ctrl+O** to expand the original command; tool results remain unchanged.
 
@@ -94,16 +90,6 @@ PY
 **After:**
 
 > Checking 12 benchmark results and artifact hashes, reporting control-relative timing statistics, then grouping each result’s TSV durations by tool category; assertions stop execution if counts or hashes differ.
-
-## Summary prompt
-
-The package sends this built-in system prompt from [`src/summaries.ts`](src/summaries.ts) to the selected summary model:
-
-> Describe the intended action of the Bash command in the supplied JSON data for someone who finds shell commands hard to read. Use a subjectless present-participle phrase beginning with an action such as “Listing”, “Checking”, “Building”, or “Inspecting”. Describe intended operations using only information supported by the command. Preserve meaningful writes, overwrites, deletions, network operations, and failure conditions; distinguish conditional && chains from unconditional semicolons and newlines. For a short simple command (under 200 characters), use a brief clause, usually 6–15 words. For a long or compound command, summarize its supported purpose and key effects in one concise sentence, usually 15–40 words. Add detail only as needed to preserve important effects and control flow. Return only the summary as plain prose.
-
-The user message contains JSON with `tool` set to `"bash"` and `arguments.command` containing the full command shown above.
-
-The prompt is built into the package; there is currently no setting for a custom prompt. See [Configuration](#configuration) to select the model and reasoning level.
 
 ## Configuration
 
