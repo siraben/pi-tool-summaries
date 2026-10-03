@@ -56,7 +56,7 @@ test(
       for await (const chunk of request) body += chunk;
       const input = JSON.parse(body);
       const isSummary = JSON.stringify(input.messages[0]).includes(
-        "untrusted JSON data",
+        "supplied JSON data",
       );
       if (isSummary) {
         times.summaryRequest = performance.now();
