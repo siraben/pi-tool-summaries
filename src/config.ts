@@ -15,6 +15,7 @@ export interface Config {
   provider?: string;
   model?: string;
   reasoning?: ReasoningLevel;
+  minCommandChars: number;
   timeoutMs: number;
   maxInputChars: number;
   maxTokens: number;
@@ -31,6 +32,7 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
   const allowed = [
     "model",
     "reasoning",
+    "minCommandChars",
     "timeoutMs",
     "maxInputChars",
     "maxTokens",
@@ -78,6 +80,7 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
     provider,
     model,
     reasoning: value.reasoning as ReasoningLevel | undefined,
+    minCommandChars: integer("minCommandChars", 200, 0, 200000),
     timeoutMs: integer("timeoutMs", 8000, 100, 60000),
     maxInputChars: integer("maxInputChars", 24000, 100, 200000),
     maxTokens: integer("maxTokens", 220, 64, 1000),

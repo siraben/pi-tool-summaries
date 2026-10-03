@@ -33,7 +33,9 @@ Omit `model` to follow the current Pi model, or set `"current"` to override a gl
 
 Omit `reasoning` for provider defaults, or choose `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported levels keep the native call; `/tool-summaries` shows the reason.
 
-Optional settings: `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (220), and `concurrency` (2).
+Commands shorter than `minCommandChars` (200 by default) keep their native view without a summary request. Set it to `0` to summarize every command. Only characters in the command itself count.
+
+Other optional settings: `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (220), and `concurrency` (2).
 
 Only visible built-in Bash calls in interactive Pi sessions are summarized. Nested calls and replacement Bash tools are skipped. Busy, oversized, or failed requests keep the original view. Summaries are cached in memory, so reopening a session shows original calls. Ctrl+O never makes another request.
 

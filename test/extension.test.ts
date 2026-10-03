@@ -35,6 +35,7 @@ test("extension wraps only Bash, uses registry auth, and respects shell settings
       shellCommandPrefix: "export FROM_PI_SETTINGS=preserved",
       toolSummaries: {
         model: "test-provider/test-cheap-model",
+        minCommandChars: 0,
       },
     }),
   );
@@ -147,6 +148,10 @@ test("default follows the current Pi model and captures it independently for eac
   ];
   const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
   process.env.PI_CODING_AGENT_DIR = cwd;
+  await writeFile(
+    join(cwd, "settings.json"),
+    JSON.stringify({ toolSummaries: { minCommandChars: 0 } }),
+  );
   delete process.env.PI_TOOL_SUMMARY_PROVIDER;
   delete process.env.PI_TOOL_SUMMARY_MODEL;
   process.env.PI_TOOL_SUMMARY_TOOLS = "bash";
@@ -237,7 +242,9 @@ test("default follows the current Pi model and captures it independently for eac
     ctx.model = first;
     await writeFile(
       join(cwd, "settings.json"),
-      JSON.stringify({ toolSummaries: { model: "unavailable/model" } }),
+      JSON.stringify({
+        toolSummaries: { model: "unavailable/model", minCommandChars: 0 },
+      }),
     );
     handlers.get("session_start")!({}, ctx);
     handlers.get("tool_execution_start")!(
@@ -339,6 +346,90 @@ test("inactive or replaced Bash and invalid settings fail open silently", async 
       handlers.get("session_shutdown")!({}, ctx);
     }
   } finally {
+    if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = saved;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("threshold counts only command characters and zero disables it", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-summary-threshold-"));
+  const saved = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = cwd;
+  const handlers = new Map<string, Function>();
+  const requests: string[] = [];
+  let modelReads = 0;
+  const api = {
+    on(name: string, handler: Function) {
+      handlers.set(name, handler);
+    },
+    registerCommand() {},
+    registerTool() {},
+    getActiveTools: () => ["bash"],
+    getAllTools: () => [{ name: "bash", sourceInfo: { source: "builtin" } }],
+  };
+  const ctx = {
+    cwd,
+    mode: "tui",
+    isProjectTrusted: () => false,
+    get model() {
+      modelReads++;
+      return { provider: "test", id: "model" };
+    },
+    ui: {
+      notify() {
+        assert.fail("Short calls must stay quiet");
+      },
+    },
+    modelRegistry: {
+      async complete(_model: unknown, context: any) {
+        requests.push(
+          JSON.parse(context.messages[0].content[0].text).arguments.command,
+        );
+        return {
+          stopReason: "stop",
+          content: [{ type: "text", text: "I’ll inspect the sample." }],
+        };
+      },
+    },
+  };
+  const start = (id: string, command: string) =>
+    handlers.get("tool_execution_start")!(
+      {
+        toolName: "bash",
+        toolCallId: id,
+        args: { command, timeout: 999999, metadata: "x".repeat(1000) },
+      },
+      ctx,
+    );
+  try {
+    extension(api as unknown as ExtensionAPI);
+    handlers.get("session_start")!({}, ctx);
+    start("below", "x".repeat(199));
+    start("unicode-below", "😀".repeat(100));
+    await delay(5);
+    assert.equal(modelReads, 0);
+    assert.deepEqual(requests, []);
+    start("at", "x".repeat(200));
+    start("above", "x".repeat(201));
+    await delay(10);
+    assert.deepEqual(
+      requests.map((s) => [...s].length),
+      [200, 201],
+    );
+    await writeFile(
+      join(cwd, "settings.json"),
+      JSON.stringify({ toolSummaries: { minCommandChars: 0 } }),
+    );
+    handlers.get("session_start")!({}, ctx);
+    start("disabled", "x");
+    await delay(5);
+    assert.deepEqual(
+      requests.map((s) => [...s].length),
+      [200, 201, 1],
+    );
+  } finally {
+    handlers.get("session_shutdown")?.({}, ctx);
     if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = saved;
     await rm(cwd, { recursive: true, force: true });

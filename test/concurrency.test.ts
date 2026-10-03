@@ -33,6 +33,10 @@ test(
   { timeout: 15000 },
   async (t) => {
     const root = await mkdtemp(join(tmpdir(), "pi-summary-concurrency-"));
+    await writeFile(
+      join(root, "settings.json"),
+      JSON.stringify({ toolSummaries: { minCommandChars: 0 } }),
+    );
     const previous = process.env.PI_CODING_AGENT_DIR;
     process.env.PI_CODING_AGENT_DIR = root;
     const times: Record<string, number> = {};

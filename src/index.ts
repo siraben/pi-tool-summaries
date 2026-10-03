@@ -72,6 +72,12 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       !config
     )
       return;
+    const command = (event.args as { command?: unknown })?.command;
+    if (
+      typeof command !== "string" ||
+      [...command].length < config.minCommandChars
+    )
+      return;
     const model = summaryModel(ctx);
     if (!model) {
       summaries.lastIssue =

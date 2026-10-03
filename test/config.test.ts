@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
-import { configFromSettings } from "../src/config.js";
+import { configFromSettings, readConfig } from "../src/config.js";
 
 test("Pi settings merge global and trusted project namespaces and reload", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-summary-settings-"));
@@ -60,4 +60,18 @@ test("Pi settings merge global and trusted project namespaces and reload", async
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("command threshold defaults to 200 and accepts only bounded integers", () => {
+  assert.equal(readConfig().minCommandChars, 200);
+  for (const value of [0, 200000])
+    assert.equal(
+      readConfig({ toolSummaries: { minCommandChars: value } }).minCommandChars,
+      value,
+    );
+  for (const value of [-1, 0.5, 200001, "200"])
+    assert.throws(
+      () => readConfig({ toolSummaries: { minCommandChars: value } }),
+      /minCommandChars/,
+    );
 });
