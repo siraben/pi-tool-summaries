@@ -53,6 +53,7 @@ test("extension wraps only Bash, uses registry auth, and respects shell settings
   let reportStatus = false;
   const notices: string[] = [];
   const api = {
+    appendEntry() {},
     on(name: string, handler: Function) {
       handlers.set(name, handler);
     },
@@ -79,6 +80,7 @@ test("extension wraps only Bash, uses registry auth, and respects shell settings
     mode: "tui",
     isProjectTrusted: () => false,
     sessionManager: {
+      getEntries: () => [],
       getSessionId: () => "summary-test",
       getSessionFile: () => undefined,
     },
@@ -141,7 +143,11 @@ test("extension wraps only Bash, uses registry auth, and respects shell settings
     await delay(5);
     assert.equal(requests, 1);
     handlers.get("tool_execution_start")!(
-      { toolName: "bash", toolCallId: "failure", args },
+      {
+        toolName: "bash",
+        toolCallId: "failure",
+        args: { command: "printf different" },
+      },
       ctx,
     );
     await delay(5);
@@ -153,6 +159,14 @@ test("extension wraps only Bash, uses registry auth, and respects shell settings
       /Last fallback: Provider\/API failure \(HTTP 503\)/,
     );
     assert.doesNotMatch(notices[0], /Bearer|secret-value/);
+    // A separate session must generate its own summary.
+    handlers.get("session_start")!({}, ctx);
+    handlers.get("tool_execution_start")!(
+      { toolName: "bash", toolCallId: "new-session", args },
+      ctx,
+    );
+    await delay(5);
+    assert.equal(requests, 3, "Separate sessions must not share summaries");
     handlers.get("session_shutdown")!({}, ctx);
   } finally {
     for (const [key, value] of Object.entries(old)) {
@@ -188,6 +202,7 @@ test("default follows the current Pi model and captures it independently for eac
   const ctx = {
     cwd,
     mode: "tui",
+    sessionManager: { getEntries: () => [], getSessionFile: () => undefined },
     model: first as typeof first | undefined,
     isProjectTrusted: () => false,
     ui: {
@@ -210,6 +225,7 @@ test("default follows the current Pi model and captures it independently for eac
     },
   };
   const api = {
+    appendEntry() {},
     on(name: string, handler: Function) {
       handlers.set(name, handler);
     },
@@ -309,6 +325,7 @@ test("inactive or replaced Bash and invalid settings fail open silently", async 
       let statusCommand: Function | undefined;
       const notifications: string[] = [];
       const api = {
+        appendEntry() {},
         on(name: string, handler: Function) {
           handlers.set(name, handler);
         },
@@ -335,6 +352,10 @@ test("inactive or replaced Bash and invalid settings fail open silently", async 
       const ctx = {
         cwd,
         mode: "tui",
+        sessionManager: {
+          getEntries: () => [],
+          getSessionFile: () => undefined,
+        },
         isProjectTrusted: () => false,
         ui: {
           notify(text: string) {
@@ -385,6 +406,7 @@ test("threshold counts only command characters and zero disables it", async () =
   const requests: string[] = [];
   let modelReads = 0;
   const api = {
+    appendEntry() {},
     on(name: string, handler: Function) {
       handlers.set(name, handler);
     },
@@ -397,6 +419,7 @@ test("threshold counts only command characters and zero disables it", async () =
     cwd,
     mode: "tui",
     isProjectTrusted: () => false,
+    sessionManager: { getEntries: () => [], getSessionFile: () => undefined },
     get model() {
       modelReads++;
       return { provider: "test", id: "model" };
