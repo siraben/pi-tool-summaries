@@ -1,6 +1,6 @@
 # Pi Tool Summaries
 
-![Before: the full TinyCC binary comparison command. After: its existing plain-language summary.](docs/before-after.svg)
+![Before: an excerpt of the TinyCC binary comparison command. After: its existing plain-language summary.](docs/before-after.svg)
 
 Plain-language summaries of tool calls.
 
