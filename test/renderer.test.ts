@@ -108,6 +108,10 @@ test("native call component survives idle, pending, failure, skipped, and reopen
       const displayed = render();
       if (outcome === "success") {
         assert.notEqual(displayed, native);
+        assert.doesNotMatch(
+          displayed.render(100).join("\n"),
+          /AI summary|full call|ctrl\+o/i,
+        );
         assert.match(displayed.render(100).join("\n"), /Printing a greeting/);
         assert.ok(
           invalidations > 0,

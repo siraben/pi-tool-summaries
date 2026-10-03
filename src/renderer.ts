@@ -1,5 +1,4 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { keyHint } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import type { Summaries } from "./summaries.js";
 
@@ -32,11 +31,7 @@ export function withSummary(
       );
       const title = theme.fg("toolTitle", theme.bold(original.label));
       if (!context.expanded && entry.summary) {
-        return new Text(
-          `${title} ${theme.fg("muted", "(AI summary)")}\n${entry.summary}\n${keyHint("app.tools.expand", "full call")}`,
-          0,
-          0,
-        );
+        return new Text(`${title}\n${entry.summary}`, 0, 0);
       }
       return native;
     },

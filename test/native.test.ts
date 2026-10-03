@@ -88,7 +88,7 @@ test("native expansion preserves every line of a long command before and after a
     isError: false,
   });
   row.setExpanded(false);
-  assert.match(text(), /AI summary/);
+  assert.doesNotMatch(text(), /AI summary|full call/);
   assert.match(text(), /Print the literal text/);
   assert.doesNotMatch(text(), /original line 119/);
   assert.match(text(), /native output/);
