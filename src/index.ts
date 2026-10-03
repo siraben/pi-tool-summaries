@@ -9,6 +9,8 @@ import { Summaries } from "./summaries.js";
 import { createGenerate, reasoningIssue } from "./provider.js";
 import { withSummary } from "./renderer.js";
 
+const summaryEntryType = "tool-summaries:summary";
+
 export default function plainToolSummaries(pi: ExtensionAPI): void {
   let summaries: Summaries | undefined;
   let registered = false;
@@ -38,10 +40,6 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       status = error instanceof Error ? error.message : "Invalid configuration";
       return;
     }
-    summaries = new Summaries(config, async () => {
-      throw new Error("No summary model selected");
-    });
-
     if (!pi.getActiveTools().includes("bash")) {
       status = "Bash is inactive";
       return;
@@ -52,6 +50,18 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
     ) {
       status = "Skipped replacement Bash tool";
       return;
+    }
+    summaries = new Summaries(
+      config,
+      async () => {
+        throw new Error("No summary model selected");
+      },
+      (record) => pi.appendEntry(summaryEntryType, record),
+    );
+    // Display records describe immutable calls, so they remain valid across tree navigation.
+    for (const entry of ctx.sessionManager.getEntries()) {
+      if (entry.type === "custom" && entry.customType === summaryEntryType)
+        summaries.restore(entry.data);
     }
     const bash = createBashToolDefinition(ctx.cwd, {
       commandPrefix: settings.getShellCommandPrefix(),
@@ -112,10 +122,15 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       const selection = model
         ? `${model.provider}/${model.id}`
         : "no available model";
-      ctx.ui.notify(
-        `Tool summaries: ${selection} (${config?.provider ? "override" : "current Pi model"}); reasoning: ${config?.reasoning ?? "provider default"}; ${status}${summaries?.lastIssue ? `\nLast fallback: ${summaries.lastIssue}` : ""}`,
-        "info",
-      );
+      const lines = [
+        `Tool summaries: ${selection} (${config?.provider ? "override" : "current Pi model"}); reasoning: ${config?.reasoning ?? "provider default"}; ${status}`,
+        `Storage: ${ctx.sessionManager.getSessionFile() ? "Pi session" : "memory only (ephemeral session)"}`,
+      ];
+      if (summaries?.lastPersistenceIssue)
+        lines.push(summaries.lastPersistenceIssue);
+      if (summaries?.lastIssue)
+        lines.push(`Last fallback: ${summaries.lastIssue}`);
+      ctx.ui.notify(lines.join("\n"), "info");
     },
   });
 }

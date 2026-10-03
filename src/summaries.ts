@@ -25,21 +25,51 @@ export function cleanSummary(text: string): string {
     .trim();
 }
 
-/** Bounded, session-local display cache. Never modifies arguments or tool results. */
+export interface SavedSummary {
+  version: 1;
+  id: string;
+  fingerprint: string;
+  summary: string;
+}
+
+function validatedSummary(text: string): string {
+  const summary = cleanSummary(text);
+  if (!summary)
+    throw new SummaryFailure(
+      "Summary response was empty or contained no usable text",
+    );
+  if (summary.length > 2000)
+    throw new SummaryFailure(
+      "Summary response exceeds the 2000-character display limit",
+    );
+  return summary;
+}
+
+/** Bounded display state backed by Pi session entries. */
 export class Summaries {
   private entries = new Map<string, Entry>();
+  private saved = new Map<string, SavedSummary>();
   private controllers = new Set<AbortController>();
-  private active = 0;
+  private disposed = false;
   lastIssue?: string;
+  lastPersistenceIssue?: string;
   constructor(
     private config: Config,
     private generate: Generate,
+    private save?: (summary: SavedSummary) => void,
   ) {}
 
   private entry(id: string): Entry {
     let e = this.entries.get(id);
     if (!e) {
-      e = { status: "idle" };
+      const saved = this.saved.get(id);
+      e = saved
+        ? {
+            status: "ready",
+            fingerprint: saved.fingerprint,
+            summary: saved.summary,
+          }
+        : { status: "idle" };
       this.entries.set(id, e);
       if (this.entries.size > 256)
         this.entries.delete(this.entries.keys().next().value!);
@@ -47,10 +77,59 @@ export class Summaries {
     return e;
   }
 
+  private remember(record: SavedSummary): void {
+    this.saved.delete(record.id);
+    this.saved.set(record.id, record);
+    if (this.saved.size > 256)
+      this.saved.delete(this.saved.keys().next().value!);
+  }
+
+  restore(data: unknown): void {
+    if (!data || typeof data !== "object" || this.disposed) return;
+    const record = data as Partial<SavedSummary>;
+    if (
+      record.version !== 1 ||
+      typeof record.id !== "string" ||
+      typeof record.fingerprint !== "string" ||
+      !/^[a-f0-9]{64}$/.test(record.fingerprint) ||
+      typeof record.summary !== "string"
+    )
+      return;
+    try {
+      const summary = validatedSummary(record.summary);
+      this.remember({
+        version: 1,
+        id: record.id,
+        fingerprint: record.fingerprint,
+        summary,
+      });
+    } catch {
+      // Old or malformed session records are just misses.
+    }
+  }
+
   view(id: string, name: string, args: unknown, invalidate: () => void): Entry {
     const e = this.entry(id);
     e.invalidate = invalidate;
     return e.fingerprint === fingerprint(name, args) ? e : { status: "idle" };
+  }
+
+  private ready(id: string, e: Entry, summary: string): void {
+    e.summary = summary;
+    e.status = "ready";
+    const record: SavedSummary = {
+      version: 1,
+      id,
+      fingerprint: e.fingerprint!,
+      summary,
+    };
+    this.remember(record);
+    try {
+      this.save?.(record);
+    } catch {
+      this.lastPersistenceIssue = "Could not persist summary in the session";
+    }
+    if (this.entries.get(id) === e) e.invalidate?.();
   }
 
   start(
@@ -60,29 +139,38 @@ export class Summaries {
     parentSignal?: AbortSignal,
     generate: Generate = this.generate,
   ): void {
+    if (this.disposed) return;
     const e = this.entry(id);
-    // One request per actual execution; redraws and expansion never spend tokens.
+    // Rendering never initiates requests. Each actual call is started only once.
     if (e.status !== "idle") return;
     e.fingerprint = fingerprint(name, args);
     const input = JSON.stringify({ tool: name, arguments: args });
-    if (
-      input.length > this.config.maxInputChars ||
-      this.active >= this.config.concurrency ||
-      parentSignal?.aborted
-    ) {
+    if (input.length > this.config.maxInputChars || parentSignal?.aborted) {
       e.status = "unavailable";
-      this.lastIssue =
-        input.length > this.config.maxInputChars
-          ? "Input exceeds configured limit"
-          : parentSignal?.aborted
-            ? "Summary cancelled before request"
-            : "Summary concurrency limit reached";
+      this.lastIssue = parentSignal?.aborted
+        ? "Summary cancelled before request"
+        : "Input exceeds configured limit";
+      return;
+    }
+    if (this.controllers.size >= this.config.concurrency) {
+      e.status = "unavailable";
+      this.lastIssue = "Summary concurrency limit reached";
       return;
     }
     e.status = "pending";
-    this.active++;
     const controller = new AbortController();
     this.controllers.add(controller);
+    void this.run(id, e, input, generate, controller, parentSignal);
+  }
+
+  private async run(
+    id: string,
+    e: Entry,
+    input: string,
+    generate: Generate,
+    controller: AbortController,
+    parentSignal?: AbortSignal,
+  ): Promise<void> {
     const abort = () =>
       controller.abort(new SummaryFailure("Summary cancelled by parent"));
     parentSignal?.addEventListener("abort", abort, { once: true });
@@ -95,7 +183,7 @@ export class Summaries {
         ),
       this.config.timeoutMs,
     );
-    // Race the abort too: a provider that ignores cancellation cannot stall the cache.
+    // Providers that ignore cancellation must not stall the queue or save late results.
     const cancelled = new Promise<never>((_, reject) => {
       controller.signal.addEventListener(
         "abort",
@@ -103,41 +191,36 @@ export class Summaries {
         { once: true },
       );
     });
-    void Promise.race([
-      Promise.resolve().then(() => generate(input, controller.signal)),
-      cancelled,
-    ])
-      .then((text) => {
-        const summary = cleanSummary(text);
-        if (!summary)
-          throw new SummaryFailure(
-            "Summary response was empty or contained no usable text",
-          );
-        if (summary.length > 2000)
-          throw new SummaryFailure(
-            "Summary response exceeds the 2000-character display limit",
-          );
-        e.summary = summary;
-        e.status = "ready";
-      })
-      .catch((error: unknown) => {
-        e.status = "unavailable";
-        this.lastIssue =
-          error instanceof SummaryFailure
-            ? error.message
-            : "Summary generation failed (unknown cause)";
-      })
-      .finally(() => {
-        clearTimeout(timer);
-        parentSignal?.removeEventListener("abort", abort);
-        this.controllers.delete(controller);
-        this.active--;
-        if (this.entries.get(id) === e) e.invalidate?.();
-      });
+    try {
+      const text = await Promise.race([
+        Promise.resolve().then(() => {
+          controller.signal.throwIfAborted();
+          return generate(input, controller.signal);
+        }),
+        cancelled,
+      ]);
+      controller.signal.throwIfAborted();
+      if (this.disposed) return;
+      const summary = validatedSummary(text);
+      this.ready(id, e, summary);
+    } catch (error) {
+      e.status = "unavailable";
+      this.lastIssue =
+        error instanceof SummaryFailure
+          ? error.message
+          : "Summary generation failed (unknown cause)";
+      if (!this.disposed && this.entries.get(id) === e) e.invalidate?.();
+    } finally {
+      clearTimeout(timer);
+      parentSignal?.removeEventListener("abort", abort);
+      this.controllers.delete(controller);
+    }
   }
 
   dispose(): void {
+    this.disposed = true;
     this.entries.clear();
+    this.saved.clear();
     for (const controller of this.controllers)
       controller.abort(
         new SummaryFailure("Summary cancelled on session shutdown"),

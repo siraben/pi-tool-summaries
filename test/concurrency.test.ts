@@ -206,6 +206,36 @@ test(
       );
       assert.ok(times.summaryVisible < times.toolEnd, JSON.stringify(times));
       assert.match(row.render(200).join("\n"), /startedfinished/);
+      const records = session.sessionManager
+        .getEntries()
+        .filter(
+          (entry) =>
+            entry.type === "custom" &&
+            entry.customType === "tool-summaries:summary",
+        );
+      assert.equal(records.length, 1);
+      const record = records[0] as any;
+      assert.equal(record.data.summary, summary);
+      assert.ok(
+        !JSON.stringify(session.messages).includes(summary),
+        "Display summaries must not enter model context",
+      );
+      await session.reload();
+      const restored = new ToolExecutionComponent(
+        "bash",
+        "controlled-bash",
+        {
+          command:
+            "printf started; sleep 0.5; while [ ! -f release ]; do sleep 0.02; done; printf finished",
+          timeout: 5,
+        },
+        {},
+        session.extensionRunner.getToolDefinition("bash"),
+        ui,
+        root,
+      );
+      assert.ok(restored.render(200).join("\n").includes(summary));
+      assert.deepEqual(errors, []);
       t.diagnostic(
         JSON.stringify(
           Object.fromEntries(
