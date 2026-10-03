@@ -14,6 +14,7 @@ const summaryEntryType = "tool-summaries:summary";
 export default function plainToolSummaries(pi: ExtensionAPI): void {
   let summaries: Summaries | undefined;
   let registered = false;
+  let backfilling: Summaries | undefined;
   let status = "Not initialized";
   let config: Config | undefined;
   const summaryModel = (ctx: ExtensionContext) =>
@@ -116,8 +117,90 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
   pi.on("session_shutdown", () => summaries?.dispose());
   pi.registerCommand("tool-summaries", {
     description:
-      "Show plain-language tool summary configuration and last fallback reason",
-    handler: async (_args: string, ctx: ExtensionContext) => {
+      "Show summary status, or backfill [count] recent messages (default 100)",
+    handler: async (args: string, ctx: ExtensionContext) => {
+      if (args.trim()) {
+        const match = /^backfill(?:\s+([1-9]\d*))?$/.exec(args.trim());
+        const count = Number(match?.[1] ?? 100);
+        if (!match || !Number.isSafeInteger(count)) {
+          ctx.ui.notify(
+            "Usage: /tool-summaries [backfill [positive message count]]",
+            "warning",
+          );
+          return;
+        }
+        const service = summaries;
+        if (!registered || !service || !config) {
+          ctx.ui.notify(`Cannot backfill: ${status}`, "warning");
+          return;
+        }
+        if (backfilling === service) {
+          ctx.ui.notify("A summary backfill is already running", "warning");
+          return;
+        }
+        const model = summaryModel(ctx);
+        const issue = model
+          ? reasoningIssue(model, config.reasoning)
+          : "Summary model unavailable";
+        if (issue || !model) {
+          ctx.ui.notify(issue ?? "Summary model unavailable", "warning");
+          return;
+        }
+        const messages = ctx.sessionManager
+          .getBranch()
+          .filter((entry) => entry.type === "message")
+          .slice(-count);
+        const calls = messages
+          .flatMap(({ message }) =>
+            message.role === "assistant"
+              ? message.content
+                  .filter((part) => part.type === "toolCall")
+                  .filter((part) => part.name === "bash")
+              : [],
+          )
+          .filter((call) => {
+            const command = call.arguments.command;
+            return (
+              typeof command === "string" &&
+              [...command].length >= config!.minCommandChars
+            );
+          });
+        const generate = createGenerate(
+          ctx.modelRegistry,
+          model,
+          config.maxTokens,
+          config.reasoning,
+        );
+        backfilling = service;
+        ctx.ui.notify(
+          `Backfilling ${calls.length} eligible Bash calls from ${messages.length} messages…`,
+          "info",
+        );
+        const totals = { generated: 0, skipped: 0, failed: 0 };
+        try {
+          // One queued request at a time leaves room for live summaries.
+          for (const call of calls) {
+            const result = await service.backfill(
+              call.id,
+              call.name,
+              call.arguments,
+              generate,
+            );
+            if (result === "cancelled" || summaries !== service) return;
+            totals[result]++;
+          }
+          const storage = ctx.sessionManager.getSessionFile()
+            ? "saved in the Pi session"
+            : "memory only (ephemeral session)";
+          ctx.ui.notify(
+            `Backfill complete: ${totals.generated} generated, ${totals.skipped} already summarized, ${totals.failed} failed; ${storage}.${service.lastPersistenceIssue ? ` ${service.lastPersistenceIssue}` : ""}`,
+            service.lastPersistenceIssue || totals.failed ? "warning" : "info",
+          );
+        } finally {
+          if (backfilling === service) backfilling = undefined;
+        }
+        return;
+      }
       const model = summaryModel(ctx);
       const selection = model
         ? `${model.provider}/${model.id}`

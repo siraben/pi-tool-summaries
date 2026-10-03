@@ -91,6 +91,20 @@ PY
 
 > Checking 12 benchmark results and artifact hashes, reporting control-relative timing statistics, then grouping each result’s TSV durations by tool category; assertions stop execution if counts or hashes differ.
 
+## Backfill earlier calls
+
+Run `/tool-summaries backfill` to generate missing summaries in the last 100
+messages on the current conversation branch, or `/tool-summaries backfill 200`
+to choose a different message count. The count includes all message roles, not
+just Bash calls. Existing summaries are skipped; previously failed summaries can
+be retried. The usual command-length and input-size limits apply.
+
+Backfill makes one model request at a time, waiting for capacity shared with live
+summaries. It uses the summary model selected when the command starts and incurs
+normal provider costs. It never executes the recorded commands. Completed
+summaries refresh their rows and are saved in the Pi session (memory only with
+`--no-session`). Closing or changing sessions cancels unfinished work.
+
 ## Configuration
 
 Add `toolSummaries` to `~/.pi/agent/settings.json` (or your custom Pi agent directory). Trusted project `.pi/settings.json` values override global settings. Run `/reload` after editing.
