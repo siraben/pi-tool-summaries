@@ -1,10 +1,8 @@
 # Pi Tool Summaries
 
+![Before: the full TinyCC binary comparison command. After: its existing plain-language summary.](docs/before-after.svg)
+
 Plain-language summaries of tool calls.
-
-Collapsed Bash calls show what the agent intends to do: “Searching TypeScript files for `oldApi` and printing the matches.” Press **Ctrl+O** to see the entire original command, including multiline scripts and heredocs.
-
-Summaries run in the background using **your currently selected Pi model**. Tool execution and native results stay unchanged. While a summary is pending or unavailable, the original call remains visible.
 
 ## Install
 
@@ -19,8 +17,6 @@ Restart Pi or run `/reload`. Use `/tool-summaries` to inspect the effective mode
 ## Before and after
 
 The compiler-binary comparison below shows an existing command and its summary from this README.
-
-![Before: the full TinyCC binary comparison command. After: its existing plain-language summary.](docs/before-after.svg)
 
 Press **Ctrl+O** to expand the original command; tool results remain unchanged.
 
