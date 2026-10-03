@@ -1,0 +1,65 @@
+{
+  "name": "pi-tool-summaries",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Plain-language summaries of tool calls.",
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "test:live": "tsx scripts/live-smoke.ts",
+    "demo": "tsx scripts/demo.ts",
+    "format": "prettier --write src test scripts package.json tsconfig.json README.md .github",
+    "format:check": "prettier --check src test scripts package.json tsconfig.json README.md .github"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.0.0",
+    "@earendil-works/pi-tui": "^1.0.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-tui": "1.0.0",
+    "@types/node": "^22.0.0",
+    "prettier": "^3.6.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "tool-summaries"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/siraben/pi-tool-summaries.git"
+  },
+  "homepage": "https://github.com/siraben/pi-tool-summaries#readme",
+  "bugs": {
+    "url": "https://github.com/siraben/pi-tool-summaries/issues"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@earendil-works/pi-tui": {
+      "optional": true
+    }
+  },
+  "overrides": {
+    "brace-expansion": "5.0.12"
+  },
+  "packageManager": "npm@12.2.0"
+}
