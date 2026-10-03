@@ -11,7 +11,7 @@ test("Pi routes a summary through its native provider and authentication pipelin
   const root = await mkdtemp(join(tmpdir(), "pi-provider-test-"));
   let requests = 0;
   let received: { authorization?: string; body: any } | undefined;
-  const summary = "I’ll read the source files and print their paths.";
+  const summary = "Reading the source files and printing their paths.";
   const server = createServer(async (request, response) => {
     requests++;
     let body = "";
@@ -89,6 +89,17 @@ test("Pi routes a summary through its native provider and authentication pipelin
     assert.deepEqual(received?.body.messages.at(-1).content, [
       { type: "text", text: input },
     ]);
+    const sentPrompt = received?.body.messages[0].content;
+    assert.match(sentPrompt, /subjectless present-participle phrase/);
+    assert.match(sentPrompt, /under 200 characters/);
+    assert.match(
+      sentPrompt,
+      /distinguish conditional && chains from unconditional semicolons/,
+    );
+    assert.match(
+      sentPrompt,
+      /writes, overwrites, deletions, network operations/,
+    );
     assert.equal(received?.body.tools, undefined);
     assert.equal(received?.body.reasoning, undefined);
     assert.equal(received?.body.reasoning_effort, undefined);

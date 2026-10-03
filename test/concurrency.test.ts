@@ -42,7 +42,7 @@ test(
     const times: Record<string, number> = {};
     const errors: string[] = [];
     const summary =
-      "I’ll print a start marker, wait for a release file, and print a finish marker.";
+      "Printing a start marker, waiting for a release file, and printing a finish marker.";
     let shellStarted!: () => void;
     const started = new Promise<void>((resolve) => {
       shellStarted = resolve;

@@ -179,7 +179,7 @@ test("default follows the current Pi model and captures it independently for eac
         chosen.push(model);
         return {
           stopReason: "stop",
-          content: [{ type: "text", text: "I’ll print the sample text." }],
+          content: [{ type: "text", text: "Printing the sample text." }],
         };
       },
     },
@@ -388,7 +388,7 @@ test("threshold counts only command characters and zero disables it", async () =
         );
         return {
           stopReason: "stop",
-          content: [{ type: "text", text: "I’ll inspect the sample." }],
+          content: [{ type: "text", text: "Inspecting the sample." }],
         };
       },
     },
@@ -405,17 +405,17 @@ test("threshold counts only command characters and zero disables it", async () =
   try {
     extension(api as unknown as ExtensionAPI);
     handlers.get("session_start")!({}, ctx);
-    start("below", "x".repeat(199));
+    start("below", "x".repeat(149));
     start("unicode-below", "😀".repeat(100));
     await delay(5);
     assert.equal(modelReads, 0);
     assert.deepEqual(requests, []);
-    start("at", "x".repeat(200));
-    start("above", "x".repeat(201));
+    start("at", "x".repeat(150));
+    start("above", "x".repeat(151));
     await delay(10);
     assert.deepEqual(
       requests.map((s) => [...s].length),
-      [200, 201],
+      [150, 151],
     );
     await writeFile(
       join(cwd, "settings.json"),
@@ -426,7 +426,7 @@ test("threshold counts only command characters and zero disables it", async () =
     await delay(5);
     assert.deepEqual(
       requests.map((s) => [...s].length),
-      [200, 201, 1],
+      [150, 151, 1],
     );
   } finally {
     handlers.get("session_shutdown")?.({}, ctx);

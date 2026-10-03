@@ -93,7 +93,7 @@ test("native call component survives idle, pending, failure, skipped, and reopen
         assert.deepEqual(render().render(100), expected);
         if (outcome === "failure") fail(new Error("Provider unavailable"));
         if (outcome === "success" || outcome === "reopened")
-          finish("I’ll print a greeting.");
+          finish("Printing a greeting.");
         if (
           outcome === "failure" ||
           outcome === "success" ||
@@ -108,7 +108,7 @@ test("native call component survives idle, pending, failure, skipped, and reopen
       const displayed = render();
       if (outcome === "success") {
         assert.notEqual(displayed, native);
-        assert.match(displayed.render(100).join("\n"), /I’ll print a greeting/);
+        assert.match(displayed.render(100).join("\n"), /Printing a greeting/);
         assert.ok(
           invalidations > 0,
           "Success must invalidate the existing row",
@@ -117,7 +117,7 @@ test("native call component survives idle, pending, failure, skipped, and reopen
         assert.equal(render(), native);
         assert.deepEqual(render().render(100), expected);
         context.expanded = false;
-        assert.match(render().render(100).join("\n"), /I’ll print a greeting/);
+        assert.match(render().render(100).join("\n"), /Printing a greeting/);
       } else {
         assert.equal(displayed, native);
         assert.deepEqual(displayed.render(100), expected);
@@ -181,10 +181,10 @@ test("the existing Pi row stays native while pending and replaces its call after
     service.start("row", "bash", args);
     await delay(5);
     assert.deepEqual(row.render(100), native);
-    finish("I’ll print a greeting.");
+    finish("Printing a greeting.");
     await delay(5);
     assert.ok(redraws > 0);
-    assert.match(row.render(100).join("\n"), /I’ll print a greeting/);
+    assert.match(row.render(100).join("\n"), /Printing a greeting/);
     assert.doesNotMatch(row.render(100).join("\n"), /printf/);
     row.setExpanded(true);
     baseline.setExpanded(true);

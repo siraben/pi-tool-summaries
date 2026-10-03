@@ -62,8 +62,8 @@ test("Pi settings merge global and trusted project namespaces and reload", async
   }
 });
 
-test("command threshold defaults to 200 and accepts only bounded integers", () => {
-  assert.equal(readConfig().minCommandChars, 200);
+test("command threshold defaults to 150 and accepts only bounded integers", () => {
+  assert.equal(readConfig().minCommandChars, 150);
   for (const value of [0, 200000])
     assert.equal(
       readConfig({ toolSummaries: { minCommandChars: value } }).minCommandChars,

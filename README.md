@@ -2,7 +2,7 @@
 
 Plain-language summaries of tool calls.
 
-Collapsed Bash calls show what the agent intends to do: “I’ll search the TypeScript files for `oldApi` and print the matches.” Press **Ctrl+O** to see the entire original command, including multiline scripts and heredocs.
+Collapsed Bash calls show what the agent intends to do: “Searching TypeScript files for `oldApi` and printing the matches.” Press **Ctrl+O** to see the entire original command, including multiline scripts and heredocs.
 
 Summaries run in the background using **your currently selected Pi model**. Tool execution and native results stay unchanged. While a summary is pending or unavailable, the original call remains visible.
 
@@ -33,7 +33,7 @@ Omit `model` to follow the current Pi model, or set `"current"` to override a gl
 
 Omit `reasoning` for provider defaults, or choose `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported levels keep the native call; `/tool-summaries` shows the reason.
 
-Commands shorter than `minCommandChars` (200 by default) keep their native view without a summary request. Set it to `0` to summarize every command. Only characters in the command itself count.
+Commands shorter than `minCommandChars` (150 by default) keep their native view without a summary request. Set it to `0` to summarize every command. Only characters in the command itself count.
 
 Other optional settings: `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (220), and `concurrency` (2).
 
