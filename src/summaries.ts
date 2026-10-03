@@ -51,6 +51,7 @@ export class Summaries {
   private saved = new Map<string, SavedSummary>();
   private controllers = new Set<AbortController>();
   private disposed = false;
+  private active = new Map<string, Promise<void>>();
   lastIssue?: string;
   lastPersistenceIssue?: string;
   constructor(
@@ -132,6 +133,36 @@ export class Summaries {
     if (this.entries.get(id) === e) e.invalidate?.();
   }
 
+  /** Backfill waits for capacity and can retry calls that failed during live execution. */
+  async backfill(
+    id: string,
+    name: string,
+    args: unknown,
+    generate: Generate,
+  ): Promise<"generated" | "skipped" | "failed" | "cancelled"> {
+    while (!this.disposed) {
+      const existing = this.active.get(id);
+      if (existing) {
+        await existing;
+        continue;
+      }
+      const e = this.entry(id);
+      if (e.status === "ready" && e.fingerprint === fingerprint(name, args))
+        return "skipped";
+      if (this.controllers.size >= this.config.concurrency) {
+        await Promise.race(this.active.values());
+        continue;
+      }
+      e.status = "idle";
+      e.summary = undefined;
+      this.start(id, name, args, undefined, generate);
+      await this.active.get(id);
+      if (this.disposed) return "cancelled";
+      return (e.status as string) === "ready" ? "generated" : "failed";
+    }
+    return "cancelled";
+  }
+
   start(
     id: string,
     name: string,
@@ -160,7 +191,9 @@ export class Summaries {
     e.status = "pending";
     const controller = new AbortController();
     this.controllers.add(controller);
-    void this.run(id, e, input, generate, controller, parentSignal);
+    const task = this.run(id, e, input, generate, controller, parentSignal);
+    this.active.set(id, task);
+    void task.finally(() => this.active.delete(id));
   }
 
   private async run(

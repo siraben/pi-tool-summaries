@@ -483,3 +483,90 @@ test("threshold counts only command characters and zero disables it", async () =
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test("backfill command scans only recent branch messages and is idempotent", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-summary-backfill-"));
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = cwd;
+  const handlers = new Map<string, Function>();
+  let command!: Function;
+  const records: unknown[] = [];
+  const requests: string[] = [];
+  const notices: string[] = [];
+  const call = (id: string, name = "bash", text = "x".repeat(150)) => ({
+    type: "message",
+    message: {
+      role: "assistant",
+      content: [{ type: "toolCall", id, name, arguments: { command: text } }],
+    },
+  });
+  const branch = [
+    call("outside-window"),
+    call("wanted"),
+    { type: "custom" },
+    call("short", "bash", "pwd"),
+    call("other", "read"),
+  ];
+  const ctx = {
+    cwd,
+    mode: "tui",
+    isProjectTrusted: () => false,
+    model: { provider: "test", id: "model" },
+    sessionManager: {
+      getEntries: () => [],
+      getBranch: () => branch,
+      getSessionFile: () => "session.jsonl",
+    },
+    modelRegistry: {
+      async complete(_model: unknown, context: any) {
+        requests.push(
+          JSON.parse(context.messages[0].content[0].text).arguments.command,
+        );
+        return {
+          stopReason: "stop",
+          content: [{ type: "text", text: "Inspecting sample data." }],
+        };
+      },
+    },
+    ui: { notify: (text: string) => notices.push(text) },
+  };
+  try {
+    extension({
+      on: (name: string, handler: Function) => handlers.set(name, handler),
+      appendEntry: (_type: string, data: unknown) => records.push(data),
+      registerCommand: (_name: string, definition: { handler: Function }) => {
+        command = definition.handler;
+      },
+      registerTool() {},
+      getActiveTools: () => ["bash"],
+      getAllTools: () => [{ name: "bash", sourceInfo: { source: "builtin" } }],
+    } as unknown as ExtensionAPI);
+    handlers.get("session_start")!({}, ctx);
+    for (const invalid of [
+      "backfill 0",
+      "backfill -1",
+      "backfill 1.5",
+      "backfill 2 extra",
+      "unknown",
+    ])
+      await command(invalid, ctx);
+    assert.equal(requests.length, 0);
+    await command("backfill 3", ctx);
+    assert.equal(requests.length, 1);
+    assert.equal(records.length, 1);
+    assert.equal((records[0] as { id: string }).id, "wanted");
+    await command("backfill 3", ctx);
+    assert.equal(requests.length, 1);
+    assert.match(
+      notices.at(-1)!,
+      /0 generated, 1 already summarized, 0 failed/,
+    );
+    await command("backfill", ctx);
+    assert.equal(requests.length, 2, "Default window includes older messages");
+  } finally {
+    handlers.get("session_shutdown")?.({}, ctx);
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
