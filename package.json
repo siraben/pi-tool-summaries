@@ -21,8 +21,8 @@
     "@earendil-works/pi-tui": ">=0.84.4 <2"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "1.0.0",
-    "@earendil-works/pi-tui": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.1",
+    "@earendil-works/pi-tui": "1.0.1",
     "@types/node": "^22.0.0",
     "prettier": "^3.6.0",
     "tsx": "^4.20.0",

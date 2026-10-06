@@ -91,6 +91,7 @@ test("Pi routes a summary through its native provider and authentication pipelin
     ]);
     const sentPrompt = received?.body.messages[0].content;
     assert.match(sentPrompt, /subjectless present-participle phrase/);
+    assert.match(sentPrompt, /For codemode.*arguments\.code/);
     assert.match(sentPrompt, /under 200 characters/);
     assert.match(
       sentPrompt,
