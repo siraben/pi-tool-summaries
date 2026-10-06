@@ -2,17 +2,17 @@
 
 ![Before: an excerpt of the TinyCC binary comparison command. After: its existing plain-language summary.](docs/before-after.svg)
 
-Plain-language summaries of tool calls.
+Plain-language summaries of Bash and codemode tool calls.
 
 ## Install
 
-Requires **Pi 0.84.4+** and Node 22.19+. Tested with Pi 0.84.4, 0.99.2, and 1.0.0.
+Requires **Pi 0.84.4+** and Node 22.19+. Codemode summaries require Pi 1.0.1+; Bash summaries continue to work on earlier supported releases. Tested with Pi 0.84.4, 0.99.2, and 1.0.4.
 
 ```sh
 pi install git:github.com/siraben/pi-tool-summaries
 ```
 
-Restart Pi or run `/reload`. Use `/tool-summaries` to inspect the effective model and status.
+Restart Pi or run `/reload`. Use `/tool-summaries` to inspect the effective model and status. When Pi's `codemode` tool is active, its JavaScript calls are summarized alongside Bash calls.
 
 ## Before and after
 
@@ -96,8 +96,8 @@ PY
 Run `/tool-summaries backfill` to generate missing summaries in the last 100
 messages on the current conversation branch, or `/tool-summaries backfill 200`
 to choose a different message count. The count includes all message roles, not
-just Bash calls. Existing summaries are skipped; previously failed summaries can
-be retried. The usual command-length and input-size limits apply.
+just eligible tool calls. Existing summaries are skipped; previously failed
+summaries can be retried. The usual source-length and input-size limits apply.
 
 Backfill makes one model request at a time, waiting for capacity shared with live
 summaries. It uses the summary model selected when the command starts and incurs
@@ -122,12 +122,12 @@ Omit `model` to follow the current Pi model, or set `"current"` to override a gl
 
 Omit `reasoning` for provider defaults, or choose `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported levels keep the native call; `/tool-summaries` shows the reason.
 
-Commands shorter than `minCommandChars` (150 by default) keep their native view without a summary request. Set it to `0` to summarize every command. Only characters in the command itself count.
+Bash commands and codemode scripts shorter than `minCommandChars` (150 by default) keep their native view without a summary request. Set it to `0` to summarize every call. Only characters in the command or script itself count.
 
 Other optional settings: `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (220), and `concurrency` (2).
 
-Only visible built-in Bash calls in interactive Pi sessions are summarized. Nested calls and replacement Bash tools are skipped. Busy, oversized, or failed requests keep the original view. Successful summaries are saved in Pi’s session JSONL and restored when you reload or resume; with `--no-session`, they stay in memory only. Ctrl+O never makes another request.
+Only visible built-in Bash calls and active codemode calls in interactive Pi sessions are summarized. Nested calls and replacement Bash tools are skipped. Busy, oversized, or failed requests keep the original view. Successful summaries are saved in Pi’s session JSONL and restored when you reload or resume; with `--no-session`, they stay in memory only. Ctrl+O never makes another request.
 
-Summary requests send the selected tool’s arguments, including the full command, to the selected provider and incur its normal cost.
+Summary requests send the selected tool’s arguments, including the full command or script, to the selected provider and incur its normal cost.
 
 MIT

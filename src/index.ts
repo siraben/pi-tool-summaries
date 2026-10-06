@@ -3,20 +3,66 @@ import {
   SettingsManager,
   type ExtensionAPI,
   type ExtensionContext,
+  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { configFromSettings, type Config } from "./config.js";
 import { Summaries } from "./summaries.js";
 import { createGenerate, reasoningIssue } from "./provider.js";
-import { withSummary } from "./renderer.js";
+import { withSummary, withSummaryRenderers } from "./renderer.js";
 
 const summaryEntryType = "tool-summaries:summary";
+type SummaryTool = "bash" | "codemode";
+type ToolRenderers = Pick<
+  ToolDefinition<any, any, any>,
+  "renderCall" | "renderResult"
+> & { renderShell?: "default" | "self" };
+type RendererAPI = ExtensionAPI & {
+  // Added in Pi 1.0.1. Keeping this optional preserves Bash support on older Pi releases.
+  registerToolRenderer?: (
+    resolver: (
+      toolName: string,
+      next: () => ToolRenderers | undefined,
+    ) => ToolRenderers | undefined,
+  ) => void;
+};
+
+function sourceFor(name: string, args: unknown): string | undefined {
+  if (!args || typeof args !== "object") return undefined;
+  const value = args as { command?: unknown; code?: unknown };
+  if (name === "bash" && typeof value.command === "string")
+    return value.command;
+  if (name === "codemode" && typeof value.code === "string") return value.code;
+  return undefined;
+}
+
+function toolList(tools: Set<SummaryTool>): string {
+  const labels = [...tools].map((tool) =>
+    tool === "bash" ? "Bash" : "codemode",
+  );
+  return labels.length === 2 ? `${labels[0]} and ${labels[1]}` : labels[0]!;
+}
 
 export default function plainToolSummaries(pi: ExtensionAPI): void {
   let summaries: Summaries | undefined;
-  let registered = false;
+  const summarizedTools = new Set<SummaryTool>();
   let backfilling: Summaries | undefined;
   let status = "Not initialized";
   let config: Config | undefined;
+  const rendererAPI = pi as RendererAPI;
+  const canWrapCodemode =
+    typeof rendererAPI.registerToolRenderer === "function";
+  rendererAPI.registerToolRenderer?.((toolName, next) => {
+    const original = next();
+    const service = summaries;
+    if (
+      toolName !== "codemode" ||
+      !summarizedTools.has("codemode") ||
+      !service ||
+      !original
+    )
+      return original;
+    return withSummaryRenderers(original, "codemode", "codemode", service);
+  });
   const summaryModel = (ctx: ExtensionContext) =>
     config?.provider && config.model
       ? ctx.modelRegistry.find(config.provider, config.model)
@@ -26,7 +72,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
     summaries?.dispose();
     summaries = undefined;
     config = undefined;
-    registered = false;
+    summarizedTools.clear();
     if (ctx.mode !== "tui") {
       status = "Disabled outside interactive mode";
       return;
@@ -41,15 +87,22 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       status = error instanceof Error ? error.message : "Invalid configuration";
       return;
     }
-    if (!pi.getActiveTools().includes("bash")) {
-      status = "Bash is inactive";
-      return;
+    const activeTools = new Set(pi.getActiveTools());
+    const issues: string[] = [];
+    if (activeTools.has("bash")) {
+      if (
+        pi.getAllTools().find((t) => t.name === "bash")?.sourceInfo.source ===
+        "builtin"
+      )
+        summarizedTools.add("bash");
+      else issues.push("Skipped replacement Bash tool");
     }
-    if (
-      pi.getAllTools().find((t) => t.name === "bash")?.sourceInfo.source !==
-      "builtin"
-    ) {
-      status = "Skipped replacement Bash tool";
+    if (activeTools.has("codemode")) {
+      if (canWrapCodemode) summarizedTools.add("codemode");
+      else issues.push("Codemode summaries require Pi 1.0.1+");
+    }
+    if (!summarizedTools.size) {
+      status = issues[0] ?? "Bash and codemode are inactive";
       return;
     }
     summaries = new Summaries(
@@ -64,30 +117,27 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       if (entry.type === "custom" && entry.customType === summaryEntryType)
         summaries.restore(entry.data);
     }
-    const bash = createBashToolDefinition(ctx.cwd, {
-      commandPrefix: settings.getShellCommandPrefix(),
-      shellPath: settings.getShellPath(),
-    });
-    pi.registerTool(withSummary(bash, summaries));
-    registered = true;
-    status = "Bash summaries enabled";
+    if (summarizedTools.has("bash")) {
+      const bash = createBashToolDefinition(ctx.cwd, {
+        commandPrefix: settings.getShellCommandPrefix(),
+        shellPath: settings.getShellPath(),
+      });
+      pi.registerTool(withSummary(bash, summaries));
+    }
+    status = `${toolList(summarizedTools)} summaries enabled${issues.length ? `; ${issues.join("; ")}` : ""}`;
   });
 
   pi.on("tool_execution_start", (event, ctx) => {
     // Pi 1.0 nested calls have no transcript row to display a summary in.
     if (
       ("parentToolCallId" in event && event.parentToolCallId) ||
-      !registered ||
-      event.toolName !== "bash" ||
+      !summarizedTools.has(event.toolName as SummaryTool) ||
       !summaries ||
       !config
     )
       return;
-    const command = (event.args as { command?: unknown })?.command;
-    if (
-      typeof command !== "string" ||
-      [...command].length < config.minCommandChars
-    )
+    const source = sourceFor(event.toolName, event.args);
+    if (source === undefined || [...source].length < config.minCommandChars)
       return;
     const model = summaryModel(ctx);
     if (!model) {
@@ -130,7 +180,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
           return;
         }
         const service = summaries;
-        if (!registered || !service || !config) {
+        if (!summarizedTools.size || !service || !config) {
           ctx.ui.notify(`Cannot backfill: ${status}`, "warning");
           return;
         }
@@ -155,14 +205,16 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
             message.role === "assistant"
               ? message.content
                   .filter((part) => part.type === "toolCall")
-                  .filter((part) => part.name === "bash")
+                  .filter((part) =>
+                    summarizedTools.has(part.name as SummaryTool),
+                  )
               : [],
           )
           .filter((call) => {
-            const command = call.arguments.command;
+            const source = sourceFor(call.name, call.arguments);
             return (
-              typeof command === "string" &&
-              [...command].length >= config!.minCommandChars
+              typeof source === "string" &&
+              [...source].length >= config!.minCommandChars
             );
           });
         const generate = createGenerate(
@@ -173,7 +225,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         );
         backfilling = service;
         ctx.ui.notify(
-          `Backfilling ${calls.length} eligible Bash calls from ${messages.length} messages…`,
+          `Backfilling ${calls.length} eligible tool calls from ${messages.length} messages…`,
           "info",
         );
         const totals = { generated: 0, skipped: 0, failed: 0 };

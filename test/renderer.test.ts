@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { test } from "node:test";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 import { createBashToolDefinition } from "@earendil-works/pi-coding-agent";
 import { readConfig } from "../src/config.js";
 import { Summaries } from "../src/summaries.js";
-import { withSummary } from "../src/renderer.js";
+import { withSummary, withSummaryRenderers } from "../src/renderer.js";
 
 const dist = dirname(
   fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")),
@@ -14,6 +16,7 @@ const dist = dirname(
 const { initTheme, theme } = await import(
   pathToFileURL(join(dist, "modes/interactive/theme/theme.js")).href
 );
+const codemodeRendererPath = join(dist, "extensions/codemode/renderer.js");
 initTheme("dark", false);
 
 test("native call component survives idle, pending, failure, skipped, and reopened states", async () => {
@@ -137,6 +140,67 @@ test("native call component survives idle, pending, failure, skipped, and reopen
     }
   }
 });
+
+test(
+  "codemode keeps its native script renderer until its summary is ready",
+  { skip: !existsSync(codemodeRendererPath) },
+  async () => {
+    const { codemodeRenderers } = await import(
+      pathToFileURL(codemodeRendererPath).href
+    );
+    let finish!: (text: string) => void;
+    const service = new Summaries(
+      { ...readConfig({}), timeoutMs: 1000 },
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const wrapped = withSummaryRenderers(
+      codemodeRenderers,
+      "codemode",
+      "codemode",
+      service,
+    );
+    const args = {
+      code: "const rows = await tools.read({ path: 'README.md' });\ntext(rows);",
+    };
+    const context = {
+      toolCallId: "codemode-row",
+      state: {},
+      expanded: false,
+      executionStarted: true,
+      argsComplete: true,
+      isPartial: true,
+      isError: false,
+      showImages: false,
+      cwd: process.cwd(),
+      args,
+      invalidate() {},
+      lastComponent: undefined,
+    } as Parameters<NonNullable<typeof wrapped.renderCall>>[2];
+    const text = () => {
+      const component = wrapped.renderCall!(args, theme, context);
+      context.lastComponent = component;
+      return stripVTControlCharacters(component.render(100).join("\n"));
+    };
+    try {
+      assert.match(text(), /tools\.read/);
+      service.start("codemode-row", "codemode", args);
+      await delay(5);
+      assert.match(text(), /tools\.read/);
+      finish("Reading the README and emitting its contents.");
+      await delay(5);
+      assert.match(text(), /Reading the README/);
+      assert.doesNotMatch(text(), /tools\.read/);
+      context.expanded = true;
+      assert.match(text(), /tools\.read/);
+      assert.equal(wrapped.renderResult, codemodeRenderers.renderResult);
+    } finally {
+      service.dispose();
+    }
+  },
+);
 
 test("the existing Pi row stays native while pending and replaces its call after success", async () => {
   const { ToolExecutionComponent } = await import(
