@@ -25,7 +25,7 @@ test("Pi's extension loader loads the real TypeScript entry point", async () => 
   assert.ok(loaded.extensions[0].commands.has("tool-summaries"));
 });
 
-test("extension summarizes active codemode without replacing its tool", async () => {
+test("extension summarizes codemode activated after session start without replacing its tool", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-summary-codemode-"));
   const previous = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = cwd;
@@ -39,6 +39,7 @@ test("extension summarizes active codemode without replacing its tool", async ()
   let command!: Function;
   let resolver!: Function;
   let request: unknown;
+  let activeTools = ["read"];
   const api = {
     appendEntry(_type: string, data: unknown) {
       records.push(data);
@@ -55,7 +56,7 @@ test("extension summarizes active codemode without replacing its tool", async ()
     registerToolRenderer(value: Function) {
       resolver = value;
     },
-    getActiveTools: () => ["codemode"],
+    getActiveTools: () => activeTools,
     getAllTools: () => [
       { name: "codemode", sourceInfo: { source: "builtin" } },
     ],
@@ -86,6 +87,7 @@ test("extension summarizes active codemode without replacing its tool", async ()
     extension(api as unknown as ExtensionAPI);
     assert.ok(resolver, "Codemode renderer resolver must be registered");
     handlers.get("session_start")!({}, ctx);
+    activeTools = ["read", "codemode"];
     const original = { renderCall() {} };
     assert.equal(
       resolver("bash", () => original),

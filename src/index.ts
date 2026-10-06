@@ -97,10 +97,11 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         summarizedTools.add("bash");
       else issues.push("Skipped replacement Bash tool");
     }
-    if (activeTools.has("codemode")) {
-      if (canWrapCodemode) summarizedTools.add("codemode");
-      else issues.push("Codemode summaries require Pi 1.0.1+");
-    }
+    // MCP servers can activate codemode after session_start, so enable its
+    // summary path whenever this Pi release can wrap the native renderer.
+    if (canWrapCodemode) summarizedTools.add("codemode");
+    else if (activeTools.has("codemode"))
+      issues.push("Codemode summaries require Pi 1.0.1+");
     if (!summarizedTools.size) {
       status = issues[0] ?? "Bash and codemode are inactive";
       return;
