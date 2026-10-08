@@ -90,17 +90,14 @@ test("Pi routes a summary through its native provider and authentication pipelin
       { type: "text", text: input },
     ]);
     const sentPrompt = received?.body.messages[0].content;
-    assert.match(sentPrompt, /subjectless present-participle phrase/);
-    assert.match(sentPrompt, /For codemode.*arguments\.code/);
-    assert.match(sentPrompt, /under 200 characters/);
+    assert.match(sentPrompt, /subjectless present-participle phrase or sentence/);
+    assert.match(sentPrompt, /for codemode.*`arguments\.code`/);
+    assert.match(sentPrompt, /Keep simple calls brief/);
     assert.match(
       sentPrompt,
-      /distinguish conditional && chains from unconditional semicolons/,
+      /important conditional, sequential, or parallel control flow/,
     );
-    assert.match(
-      sentPrompt,
-      /writes, overwrites, deletions, network operations/,
-    );
+    assert.match(sentPrompt, /writes, deletions, network or model operations/);
     assert.equal(received?.body.tools, undefined);
     assert.equal(received?.body.reasoning, undefined);
     assert.equal(received?.body.reasoning_effort, undefined);

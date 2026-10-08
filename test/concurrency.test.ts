@@ -56,7 +56,7 @@ test(
       for await (const chunk of request) body += chunk;
       const input = JSON.parse(body);
       const isSummary = JSON.stringify(input.messages[0]).includes(
-        "supplied JSON data",
+        "intended action of the tool call in the supplied JSON",
       );
       if (isSummary) {
         times.summaryRequest = performance.now();
