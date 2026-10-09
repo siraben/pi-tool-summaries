@@ -51,17 +51,40 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
   const rendererAPI = pi as RendererAPI;
   const canWrapCodemode =
     typeof rendererAPI.registerToolRenderer === "function";
+  const deferredRows = new Map<string, () => void>();
+  let collectDeferredRows = true;
+  const finishRendererBinding = () => {
+    collectDeferredRows = false;
+    const invalidations = [...deferredRows.values()];
+    deferredRows.clear();
+    if (!summaries) return;
+    for (const invalidate of invalidations) invalidate();
+  };
   rendererAPI.registerToolRenderer?.((toolName, next) => {
     const original = next();
-    const service = summaries;
+    if (!original) return original;
+    const tool = toolName as SummaryTool;
+    if (tool !== "bash" && tool !== "codemode") return original;
+    // After session_start Bash already has the compatibility wrapper registered
+    // below. Before session_start (notably Pi's /reload transcript rebuild), keep
+    // a lazy wrapper on each historical row so it can bind after state restores.
+    if (tool === "bash" && summaries && summarizedTools.has("bash"))
+      return original;
     if (
-      toolName !== "codemode" ||
-      !summarizedTools.has("codemode") ||
-      !service ||
-      !original
+      tool === "bash" &&
+      pi.getAllTools().find((candidate) => candidate.name === "bash")
+        ?.sourceInfo.source !== "builtin"
     )
       return original;
-    return withSummaryRenderers(original, "codemode", "codemode", service);
+    return withSummaryRenderers(
+      original,
+      tool,
+      tool,
+      () => (summarizedTools.has(tool) ? summaries : undefined),
+      (id, invalidate) => {
+        if (collectDeferredRows) deferredRows.set(`${tool}\0${id}`, invalidate);
+      },
+    );
   });
   const summaryModel = (ctx: ExtensionContext) =>
     config?.provider && config.model
@@ -75,6 +98,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
     summarizedTools.clear();
     if (ctx.mode !== "tui") {
       status = "Disabled outside interactive mode";
+      finishRendererBinding();
       return;
     }
     // Use Pi's own merge, agent-directory resolution, and project-trust rules.
@@ -85,6 +109,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       config = configFromSettings(settings);
     } catch (error) {
       status = error instanceof Error ? error.message : "Invalid configuration";
+      finishRendererBinding();
       return;
     }
     const activeTools = new Set(pi.getActiveTools());
@@ -104,6 +129,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       issues.push("Codemode summaries require Pi 1.0.1+");
     if (!summarizedTools.size) {
       status = issues[0] ?? "Bash and codemode are inactive";
+      finishRendererBinding();
       return;
     }
     summaries = new Summaries(
@@ -126,6 +152,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       pi.registerTool(withSummary(bash, summaries));
     }
     status = `${toolList(summarizedTools)} summaries enabled${issues.length ? `; ${issues.join("; ")}` : ""}`;
+    finishRendererBinding();
   });
 
   pi.on("tool_execution_start", (event, ctx) => {

@@ -47,6 +47,26 @@ test("backfill waits for live capacity, persists, refreshes, and skips restored 
   resumed.dispose();
 });
 
+test("backfill refreshes historical rows beyond the old display-cache window", async () => {
+  const service = new Summaries(config, async () => "unused");
+  let refreshed = 0;
+  for (let i = 0; i < 300; i++)
+    service.view(`historical-${i}`, "bash", args, () => {
+      if (i === 0) refreshed++;
+    });
+  assert.equal(
+    await service.backfill(
+      "historical-0",
+      "bash",
+      args,
+      async () => "Printing old output.",
+    ),
+    "generated",
+  );
+  assert.equal(refreshed, 1);
+  service.dispose();
+});
+
 test("backfill retries failures and respects input limits", async () => {
   const service = new Summaries(config, async () => "");
   assert.equal(

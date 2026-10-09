@@ -125,6 +125,112 @@ test("extension summarizes codemode activated after session start without replac
   }
 });
 
+test("backfill binds historical Bash rows rebuilt before session_start", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-summary-reload-backfill-"));
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = cwd;
+  const handlers = new Map<string, Function>();
+  let command!: Function;
+  let resolver!: Function;
+  const records: unknown[] = [];
+  const notices: string[] = [];
+  const args = { command: "x".repeat(150) };
+  const ctx = {
+    cwd,
+    mode: "tui",
+    isProjectTrusted: () => false,
+    model: { provider: "test", id: "model" },
+    sessionManager: {
+      getEntries: () => [],
+      getBranch: () => [
+        {
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                id: "historical",
+                name: "bash",
+                arguments: args,
+              },
+            ],
+          },
+        },
+      ],
+      getSessionFile: () => "session.jsonl",
+    },
+    modelRegistry: {
+      async complete() {
+        return {
+          stopReason: "stop",
+          content: [{ type: "text", text: "Inspecting historical data." }],
+        };
+      },
+    },
+    ui: { notify: (text: string) => notices.push(text) },
+  };
+  try {
+    extension({
+      on: (name: string, handler: Function) => handlers.set(name, handler),
+      appendEntry: (_type: string, data: unknown) => records.push(data),
+      registerCommand: (_name: string, definition: { handler: Function }) => {
+        command = definition.handler;
+      },
+      registerTool() {},
+      registerToolRenderer(value: Function) {
+        resolver = value;
+      },
+      getActiveTools: () => ["bash"],
+      getAllTools: () => [{ name: "bash", sourceInfo: { source: "builtin" } }],
+    } as unknown as ExtensionAPI);
+
+    const native = {
+      renderCall: () => ({
+        render: () => [`$ ${args.command}`],
+        invalidate() {},
+      }),
+    };
+    const wrapped = resolver("bash", () => native);
+    assert.notEqual(wrapped, native);
+    let invalidations = 0;
+    let rendered = "";
+    const context = {
+      toolCallId: "historical",
+      state: {},
+      expanded: false,
+      invalidate() {
+        invalidations++;
+        rendered = render();
+      },
+    };
+    const theme = {
+      bold: (text: string) => text,
+      fg: (_color: string, text: string) => text,
+    };
+    const render = () =>
+      wrapped
+        .renderCall(args, theme, context)
+        .render(200)
+        .map((line: string) => line.trimEnd())
+        .join("\n");
+
+    rendered = render();
+    assert.match(rendered, /^\$ /);
+    handlers.get("session_start")!({}, ctx);
+    assert.equal(invalidations, 1, "session_start must bind the rebuilt row");
+    await command("backfill", ctx);
+    assert.ok(invalidations > 1, "backfill must refresh the bound row");
+    assert.match(rendered, /^bash\nInspecting historical data\.$/);
+    assert.equal(records.length, 1);
+  } finally {
+    handlers.get("session_shutdown")?.({}, ctx);
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("extension wraps only Bash, uses registry auth, and respects shell settings", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-summary-extension-"));
   const agentDir = join(cwd, "agent");

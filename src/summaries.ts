@@ -45,9 +45,12 @@ function validatedSummary(text: string): string {
   return summary;
 }
 
-/** Bounded display state backed by Pi session entries. */
+/** Session-scoped display state backed by Pi session entries. */
 export class Summaries {
+  // Pi retains transcript rows for the session, so retain their invalidators too;
+  // otherwise backfill cannot refresh rows beyond an arbitrary cache window.
   private entries = new Map<string, Entry>();
+  // Restored records must remain addressable for every persisted call in the session.
   private saved = new Map<string, SavedSummary>();
   private controllers = new Set<AbortController>();
   private disposed = false;
@@ -72,17 +75,12 @@ export class Summaries {
           }
         : { status: "idle" };
       this.entries.set(id, e);
-      if (this.entries.size > 256)
-        this.entries.delete(this.entries.keys().next().value!);
     }
     return e;
   }
 
   private remember(record: SavedSummary): void {
-    this.saved.delete(record.id);
     this.saved.set(record.id, record);
-    if (this.saved.size > 256)
-      this.saved.delete(this.saved.keys().next().value!);
   }
 
   restore(data: unknown): void {

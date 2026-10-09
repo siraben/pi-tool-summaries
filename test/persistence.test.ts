@@ -66,6 +66,23 @@ test("session persistence failures preserve summaries; malformed records are ign
   service.dispose();
 });
 
+test("restores every persisted summary in sessions with more than 256 calls", () => {
+  const service = new Summaries(config, async () => "unused");
+  for (let i = 0; i < 300; i++)
+    service.restore({
+      version: 1,
+      id: `call-${i}`,
+      fingerprint: key,
+      summary: `Summary ${i}.`,
+    });
+  for (let i = 0; i < 300; i++)
+    assert.equal(
+      service.view(`call-${i}`, "bash", args, () => {}).summary,
+      `Summary ${i}.`,
+    );
+  service.dispose();
+});
+
 for (const persistent of [true, false]) {
   test(`session summaries ${persistent ? "survive reopening JSONL" : "stay in memory without files"}`, async (t) => {
     const root = mkdtempSync(join(tmpdir(), "pi-summary-session-"));

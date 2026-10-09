@@ -202,6 +202,64 @@ test(
   },
 );
 
+test("backfill replaces a collapsed historical Bash call with its plain summary", async () => {
+  const { ToolExecutionComponent } = await import(
+    pathToFileURL(join(dist, "modes/interactive/components/tool-execution.js"))
+      .href
+  );
+  let redraws = 0;
+  const service = new Summaries(
+    { ...readConfig({}), timeoutMs: 1000 },
+    async () => {
+      assert.fail("Backfill must use its supplied generator");
+    },
+  );
+  const args = { command: "printf 'historical output\\n'" };
+  const row = new ToolExecutionComponent(
+    "bash",
+    "historical-row",
+    args,
+    {},
+    withSummary(createBashToolDefinition(process.cwd()), service),
+    {
+      requestRender() {
+        redraws++;
+      },
+    },
+    process.cwd(),
+  );
+  row.setArgsComplete();
+  row.updateResult({
+    content: [{ type: "text", text: "historical output" }],
+    isError: false,
+  });
+  const rendered = () => stripVTControlCharacters(row.render(100).join("\n"));
+  try {
+    assert.match(rendered(), /\$ printf 'historical output/);
+    assert.equal(
+      await service.backfill(
+        "historical-row",
+        "bash",
+        args,
+        async () => "Printing historical output.",
+      ),
+      "generated",
+    );
+    const collapsed = rendered();
+    assert.ok(redraws > 0, "Backfill must invalidate the historical row");
+    assert.match(collapsed, /\bbash\s*\n\s*Printing historical output\./);
+    assert.doesNotMatch(collapsed, /\$ printf/);
+    assert.match(collapsed, /historical output\s*$/);
+
+    row.setExpanded(true);
+    const expanded = rendered();
+    assert.match(expanded, /\$ printf 'historical output/);
+    assert.doesNotMatch(expanded, /Printing historical output\./);
+  } finally {
+    service.dispose();
+  }
+});
+
 test("the existing Pi row stays native while pending and replaces its call after success", async () => {
   const { ToolExecutionComponent } = await import(
     pathToFileURL(join(dist, "modes/interactive/components/tool-execution.js"))

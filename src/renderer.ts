@@ -6,13 +6,15 @@ type ToolRenderers = Pick<
   ToolDefinition<any, any, any>,
   "renderCall" | "renderResult"
 > & { renderShell?: "default" | "self" };
+type SummarySource = Summaries | (() => Summaries | undefined);
 
 /** Wrap renderers without changing execution, schema, metadata, or result rendering. */
 export function withSummaryRenderers(
   original: ToolRenderers,
   name: string,
   label: string,
-  summaries: Summaries,
+  summaries: SummarySource,
+  onUnavailable?: (id: string, invalidate: () => void) => void,
 ): ToolRenderers {
   if (!original.renderCall) return original;
   // Keep native components separate from summary components across redraws/toggles.
@@ -30,7 +32,12 @@ export function withSummaryRenderers(
         lastComponent: nativeComponents.get(context.state),
       });
       nativeComponents.set(context.state, native);
-      const entry = summaries.view(
+      const service = typeof summaries === "function" ? summaries() : summaries;
+      if (!service) {
+        onUnavailable?.(context.toolCallId, context.invalidate);
+        return native;
+      }
+      const entry = service.view(
         context.toolCallId,
         name,
         args,
