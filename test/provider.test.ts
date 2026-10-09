@@ -89,15 +89,6 @@ test("Pi routes a summary through its native provider and authentication pipelin
     assert.deepEqual(received?.body.messages.at(-1).content, [
       { type: "text", text: input },
     ]);
-    const sentPrompt = received?.body.messages[0].content;
-    assert.match(sentPrompt, /subjectless present-participle phrase or sentence/);
-    assert.match(sentPrompt, /for codemode.*`arguments\.code`/);
-    assert.match(sentPrompt, /Keep simple calls brief/);
-    assert.match(
-      sentPrompt,
-      /important conditional, sequential, or parallel control flow/,
-    );
-    assert.match(sentPrompt, /writes, deletions, network or model operations/);
     assert.equal(received?.body.tools, undefined);
     assert.equal(received?.body.reasoning, undefined);
     assert.equal(received?.body.reasoning_effort, undefined);

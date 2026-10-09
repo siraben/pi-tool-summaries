@@ -55,8 +55,16 @@ test(
       let body = "";
       for await (const chunk of request) body += chunk;
       const input = JSON.parse(body);
-      const isSummary = JSON.stringify(input.messages[0]).includes(
-        "intended action of the tool call in the supplied JSON",
+      const isSummary = input.messages.some(
+        (message: any) =>
+          message.role === "user" &&
+          Array.isArray(message.content) &&
+          message.content.some(
+            (part: any) =>
+              part.type === "text" &&
+              typeof part.text === "string" &&
+              part.text.startsWith('{"tool":"bash","arguments":'),
+          ),
       );
       if (isSummary) {
         times.summaryRequest = performance.now();
