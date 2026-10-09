@@ -768,6 +768,8 @@ test("backfill command scans only recent branch messages and is idempotent", asy
       "backfill -1",
       "backfill 1.5",
       "backfill 2 extra",
+      "backfill --force 2",
+      "backfill 2 --force extra",
       "unknown",
     ])
       await command(invalid, ctx);
@@ -782,8 +784,12 @@ test("backfill command scans only recent branch messages and is idempotent", asy
       notices.at(-1)!,
       /0 generated, 1 already summarized, 0 failed/,
     );
+    await command("backfill 3 --force", ctx);
+    assert.equal(requests.length, 2, "Force must regenerate the ready summary");
+    assert.equal(records.length, 2);
+    assert.match(notices.at(-1)!, /1 generated, 0 already summarized/);
     await command("backfill", ctx);
-    assert.equal(requests.length, 3, "Default window includes older messages");
+    assert.equal(requests.length, 4, "Default window includes older messages");
     assert.ok(
       requests.includes(code),
       "Backfill must include codemode scripts",

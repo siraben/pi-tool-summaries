@@ -131,12 +131,13 @@ export class Summaries {
     if (this.entries.get(id) === e) e.invalidate?.();
   }
 
-  /** Backfill waits for capacity and can retry calls that failed during live execution. */
+  /** Backfill waits for capacity and can retry failures or forcibly replace a ready summary. */
   async backfill(
     id: string,
     name: string,
     args: unknown,
     generate: Generate,
+    force = false,
   ): Promise<"generated" | "skipped" | "failed" | "cancelled"> {
     while (!this.disposed) {
       const existing = this.active.get(id);
@@ -145,14 +146,16 @@ export class Summaries {
         continue;
       }
       const e = this.entry(id);
-      if (e.status === "ready" && e.fingerprint === fingerprint(name, args))
-        return "skipped";
+      const expectedFingerprint = fingerprint(name, args);
+      const matches = e.fingerprint === expectedFingerprint;
+      if (e.status === "ready" && matches && !force) return "skipped";
       if (this.controllers.size >= this.config.concurrency) {
         await Promise.race(this.active.values());
         continue;
       }
       e.status = "idle";
-      e.summary = undefined;
+      // Keep a matching prior summary visible unless its forced replacement succeeds.
+      if (!matches) e.summary = undefined;
       this.start(id, name, args, undefined, generate);
       await this.active.get(id);
       if (this.disposed) return "cancelled";

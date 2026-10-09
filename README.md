@@ -95,9 +95,11 @@ PY
 
 Run `/tool-summaries backfill` to generate missing summaries in the last 100
 messages on the current conversation branch, or `/tool-summaries backfill 200`
-to choose a different message count. The count includes all message roles, not
-just eligible tool calls. Existing summaries are skipped; previously failed
-summaries can be retried. The usual source-length and input-size limits apply.
+to choose a different message count. Add `--force`, as in
+`/tool-summaries backfill 200 --force`, to regenerate existing summaries. The
+count includes all message roles, not just eligible tool calls. Without
+`--force`, existing summaries are skipped; previously failed summaries can be
+retried. The usual source-length and input-size limits apply.
 
 Backfill makes one model request at a time, waiting for capacity shared with live
 summaries. It uses the summary model selected when the command starts and incurs

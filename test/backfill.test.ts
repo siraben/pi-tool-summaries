@@ -47,6 +47,53 @@ test("backfill waits for live capacity, persists, refreshes, and skips restored 
   resumed.dispose();
 });
 
+test("forced backfill replaces ready summaries but preserves them on failure", async () => {
+  const saved: SavedSummary[] = [];
+  const service = new Summaries(
+    config,
+    async () => "unused",
+    (record) => saved.push(record),
+  );
+  assert.equal(
+    await service.backfill(
+      "old",
+      "bash",
+      args,
+      async () => "Original summary.",
+    ),
+    "generated",
+  );
+  assert.equal(
+    await service.backfill("old", "bash", args, async () => "", true),
+    "failed",
+  );
+  assert.equal(
+    service.view("old", "bash", args, () => {}).summary,
+    "Original summary.",
+  );
+  assert.equal(saved.length, 1, "A failed replacement must not persist");
+  assert.equal(
+    await service.backfill(
+      "old",
+      "bash",
+      args,
+      async () => "Replacement summary.",
+      true,
+    ),
+    "generated",
+  );
+  assert.equal(
+    service.view("old", "bash", args, () => {}).summary,
+    "Replacement summary.",
+  );
+  assert.equal(saved.length, 2);
+  assert.equal(
+    await service.backfill("old", "bash", args, async () => "unexpected"),
+    "skipped",
+  );
+  service.dispose();
+});
+
 test("backfill refreshes historical rows beyond the old display-cache window", async () => {
   const service = new Summaries(config, async () => "unused");
   let refreshed = 0;

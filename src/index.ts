@@ -195,14 +195,17 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
   pi.on("session_shutdown", () => summaries?.dispose());
   pi.registerCommand("tool-summaries", {
     description:
-      "Show summary status, or backfill [count] recent messages (default 100)",
+      "Show status, or backfill [count] [--force] recent messages (default 100)",
     handler: async (args: string, ctx: ExtensionContext) => {
       if (args.trim()) {
-        const match = /^backfill(?:\s+([1-9]\d*))?$/.exec(args.trim());
+        const match = /^backfill(?:\s+([1-9]\d*))?(?:\s+(--force))?$/.exec(
+          args.trim(),
+        );
         const count = Number(match?.[1] ?? 100);
+        const force = match?.[2] === "--force";
         if (!match || !Number.isSafeInteger(count)) {
           ctx.ui.notify(
-            "Usage: /tool-summaries [backfill [positive message count]]",
+            "Usage: /tool-summaries [backfill [positive message count] [--force]]",
             "warning",
           );
           return;
@@ -253,7 +256,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         );
         backfilling = service;
         ctx.ui.notify(
-          `Backfilling ${calls.length} eligible tool calls from ${messages.length} messages…`,
+          `Backfilling ${calls.length} eligible tool calls from ${messages.length} messages${force ? "; regenerating existing summaries" : ""}…`,
           "info",
         );
         const totals = { generated: 0, skipped: 0, failed: 0 };
@@ -265,6 +268,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
               call.name,
               call.arguments,
               generate,
+              force,
             );
             if (result === "cancelled" || summaries !== service) return;
             totals[result]++;
