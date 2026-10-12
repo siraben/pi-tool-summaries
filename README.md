@@ -126,7 +126,7 @@ Omit `reasoning` for provider defaults, or choose `off`, `minimal`, `low`, `medi
 
 Bash commands and codemode scripts shorter than `minCommandChars` (150 by default) keep their native view without a summary request. Set it to `0` to summarize every call. Only characters in the command or script itself count.
 
-Other optional settings: `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (220), and `concurrency` (2).
+Other optional settings: `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (1024), and `concurrency` (2).
 
 Only visible built-in Bash calls and active codemode calls in interactive Pi sessions are summarized. Nested calls and replacement Bash tools are skipped. Busy, oversized, or failed requests keep the original view. Successful summaries are saved in Pi’s session JSONL and restored when you reload or resume; with `--no-session`, they stay in memory only. Ctrl+O never makes another request.
 

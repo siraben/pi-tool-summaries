@@ -75,3 +75,16 @@ test("command threshold defaults to 150 and accepts only bounded integers", () =
       /minCommandChars/,
     );
 });
+
+test("output budget defaults to 1024 tokens", () => {
+  assert.equal(readConfig().maxTokens, 1024);
+  assert.equal(
+    readConfig({ toolSummaries: { maxTokens: 1024 } }).maxTokens,
+    1024,
+  );
+  for (const value of [63, 1025])
+    assert.throws(
+      () => readConfig({ toolSummaries: { maxTokens: value } }),
+      /maxTokens/,
+    );
+});
