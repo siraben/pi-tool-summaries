@@ -1,6 +1,6 @@
 # Pi Tool Summaries
 
-![Before: an excerpt of the TinyCC binary comparison command. After: its Haiku 5.5-generated plain-language summary.](docs/before-after.svg)
+![Before: a command that clones Pi and searches its API history. After: its Haiku 5.5-generated plain-language summary.](docs/before-after.svg)
 
 Plain-language summaries of Bash and codemode tool calls.
 
