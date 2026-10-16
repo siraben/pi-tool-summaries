@@ -1,6 +1,6 @@
 # Pi Tool Summaries
 
-![Before: a fail-fast Bash sequence that validates, rebases, force-pushes, and retargets a Nixpkgs pull request. After: its Haiku 5.5-generated plain-language summary.](docs/before-after.svg)
+![Before: a fail-fast Bash workflow that bootstraps RISC-V stage0 tools under QEMU. After: its Haiku 5.5-generated plain-language summary.](docs/before-after.svg)
 
 Plain-language summaries of Bash and codemode tool calls.
 
