@@ -170,7 +170,9 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
     const model = summaryModel(ctx);
     if (!model) {
       summaries.lastIssue =
-        "Summary model unavailable; select a Pi model or check the explicit override";
+        config.modelSource === "current"
+          ? "Summary model unavailable; select a Pi model"
+          : "Summary model unavailable; check the summary model and provider authentication";
       return;
     }
     const issue = reasoningIssue(model, config.reasoning);
@@ -289,8 +291,14 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       const selection = model
         ? `${model.provider}/${model.id}`
         : "no available model";
+      const modelSource =
+        config?.modelSource === "current"
+          ? "current Pi model"
+          : config?.modelSource === "configured"
+            ? "configured override"
+            : "default";
       const lines = [
-        `Tool summaries: ${selection} (${config?.provider ? "override" : "current Pi model"}); reasoning: ${config?.reasoning ?? "provider default"}; ${status}`,
+        `Tool summaries: ${selection} (${modelSource}); reasoning: ${config?.reasoning ?? "provider default"}; ${status}`,
         `Storage: ${ctx.sessionManager.getSessionFile() ? "Pi session" : "memory only (ephemeral session)"}`,
       ];
       if (summaries?.lastPersistenceIssue)

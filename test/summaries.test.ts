@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { readConfig } from "../src/config.js";
+import { defaultSummaryModel, readConfig } from "../src/config.js";
 import { cleanSummary, Summaries } from "../src/summaries.js";
 
 const config = { ...readConfig({}), timeoutMs: 20 };
@@ -9,7 +9,14 @@ const args = { command: "find src -name '*.ts' -print" };
 const tick = () => delay(5);
 
 test("settings validate malformed limits and model references", () => {
-  assert.equal(readConfig({}).model, undefined);
+  assert.deepEqual(
+    {
+      provider: readConfig({}).provider,
+      model: readConfig({}).model,
+      source: readConfig({}).modelSource,
+    },
+    { ...defaultSummaryModel, source: "default" },
+  );
   assert.throws(
     () => readConfig({ toolSummaries: { model: "cheap" } }),
     /provider/,
@@ -41,10 +48,11 @@ test("settings validate malformed limits and model references", () => {
   });
   assert.equal(config.provider, "openrouter");
   assert.equal(config.model, "openai/example");
-  assert.equal(
-    readConfig({ toolSummaries: { model: "current" } }).model,
-    undefined,
-  );
+  assert.equal(config.modelSource, "configured");
+  const current = readConfig({ toolSummaries: { model: "current" } });
+  assert.equal(current.provider, undefined);
+  assert.equal(current.model, undefined);
+  assert.equal(current.modelSource, "current");
 });
 
 test("requests are asynchronous, deduplicated, and tied to exact call arguments", async () => {

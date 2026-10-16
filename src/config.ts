@@ -11,9 +11,15 @@ export const reasoningLevels = [
 ] as const;
 export type ReasoningLevel = (typeof reasoningLevels)[number];
 
+export const defaultSummaryModel = {
+  provider: "openrouter",
+  model: "anthropic/claude-haiku-5.5",
+} as const;
+
 export interface Config {
   provider?: string;
   model?: string;
+  modelSource: "default" | "configured" | "current";
   reasoning?: ReasoningLevel;
   minCommandChars: number;
   timeoutMs: number;
@@ -60,9 +66,14 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
     throw new Error(
       `toolSummaries.reasoning must be one of: ${reasoningLevels.join(", ")}`,
     );
-  let provider: string | undefined;
-  let model: string | undefined;
-  if (value.model !== undefined && value.model !== "current") {
+  let provider: string | undefined = defaultSummaryModel.provider;
+  let model: string | undefined = defaultSummaryModel.model;
+  let modelSource: Config["modelSource"] = "default";
+  if (value.model === "current") {
+    provider = undefined;
+    model = undefined;
+    modelSource = "current";
+  } else if (value.model !== undefined) {
     if (typeof value.model !== "string")
       throw new Error(
         "toolSummaries.model must be current or provider/model-id",
@@ -75,10 +86,12 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
       );
     provider = ref.slice(0, slash);
     model = ref.slice(slash + 1);
+    modelSource = "configured";
   }
   return {
     provider,
     model,
+    modelSource,
     reasoning: value.reasoning as ReasoningLevel | undefined,
     minCommandChars: integer("minCommandChars", 150, 0, 200000),
     timeoutMs: integer("timeoutMs", 8000, 100, 60000),

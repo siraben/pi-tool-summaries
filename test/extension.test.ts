@@ -71,6 +71,11 @@ test("extension summarizes codemode activated after session start without replac
       getSessionFile: () => "session.jsonl",
     },
     modelRegistry: {
+      find(provider: string, id: string) {
+        assert.equal(provider, "openrouter");
+        assert.equal(id, "anthropic/claude-haiku-5.5");
+        return ctx.model;
+      },
       async complete(_model: unknown, context: any) {
         request = JSON.parse(context.messages[0].content[0].text);
         return {
@@ -129,6 +134,10 @@ test("backfill binds historical Bash rows rebuilt before session_start", async (
   const cwd = await mkdtemp(join(tmpdir(), "pi-summary-reload-backfill-"));
   const previous = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = cwd;
+  await writeFile(
+    join(cwd, "settings.json"),
+    JSON.stringify({ toolSummaries: { model: "current" } }),
+  );
   const handlers = new Map<string, Function>();
   let command!: Function;
   let resolver!: Function;
@@ -383,7 +392,7 @@ test("extension wraps only Bash, uses registry auth, and respects shell settings
   }
 });
 
-test("default follows the current Pi model and captures it independently for each background call", async () => {
+test("current override follows the Pi model and captures it independently for each background call", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-summary-models-"));
   const keys = [
     "PI_CODING_AGENT_DIR",
@@ -395,7 +404,9 @@ test("default follows the current Pi model and captures it independently for eac
   process.env.PI_CODING_AGENT_DIR = cwd;
   await writeFile(
     join(cwd, "settings.json"),
-    JSON.stringify({ toolSummaries: { minCommandChars: 0 } }),
+    JSON.stringify({
+      toolSummaries: { model: "current", minCommandChars: 0 },
+    }),
   );
   delete process.env.PI_TOOL_SUMMARY_PROVIDER;
   delete process.env.PI_TOOL_SUMMARY_MODEL;
@@ -569,8 +580,10 @@ test("inactive or replaced Bash and invalid settings fail open silently", async 
           },
         },
         modelRegistry: {
-          find() {
-            assert.fail("No provider lookup expected");
+          find(provider: string, id: string) {
+            assert.equal(provider, "openrouter");
+            assert.equal(id, "anthropic/claude-haiku-5.5");
+            return undefined;
           },
         },
       };
@@ -608,6 +621,10 @@ test("threshold counts only command characters and zero disables it", async () =
   const cwd = await mkdtemp(join(tmpdir(), "pi-summary-threshold-"));
   const saved = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = cwd;
+  await writeFile(
+    join(cwd, "settings.json"),
+    JSON.stringify({ toolSummaries: { model: "current" } }),
+  );
   const handlers = new Map<string, Function>();
   const requests: string[] = [];
   let modelReads = 0;
@@ -673,7 +690,9 @@ test("threshold counts only command characters and zero disables it", async () =
     );
     await writeFile(
       join(cwd, "settings.json"),
-      JSON.stringify({ toolSummaries: { minCommandChars: 0 } }),
+      JSON.stringify({
+        toolSummaries: { model: "current", minCommandChars: 0 },
+      }),
     );
     handlers.get("session_start")!({}, ctx);
     start("disabled", "x");
@@ -694,6 +713,10 @@ test("backfill command scans only recent branch messages and is idempotent", asy
   const cwd = await mkdtemp(join(tmpdir(), "pi-summary-backfill-"));
   const previous = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = cwd;
+  await writeFile(
+    join(cwd, "settings.json"),
+    JSON.stringify({ toolSummaries: { model: "current" } }),
+  );
   const handlers = new Map<string, Function>();
   let command!: Function;
   const records: unknown[] = [];

@@ -1,6 +1,6 @@
 # Pi Tool Summaries
 
-![Before: an excerpt of the TinyCC binary comparison command. After: its existing plain-language summary.](docs/before-after.svg)
+![Before: an excerpt of the TinyCC binary comparison command. After: its Haiku 5.5-generated plain-language summary.](docs/before-after.svg)
 
 Plain-language summaries of Bash and codemode tool calls.
 
@@ -47,7 +47,7 @@ python3 /tmp/blynn-structural/compare-tinycc.py > /tmp/blynn-structural/tinycc-a
 
 **After:**
 
-> Writing a Python comparison script, then running it to verify three binaries match after replacing their respective store paths, calculate hashes, and overwrite a JSON report; assertions can fail if paths or normalized contents differ.
+> Writing a Python script to /tmp that checks three TinyCC binaries across two Nix store outputs, asserts they match after replacing only the store prefix, and saves their sizes and SHA-256 hashes to tinycc-artifacts.json.
 
 ### Check benchmark results
 
@@ -89,7 +89,7 @@ PY
 
 **After:**
 
-> Checking 12 benchmark results and artifact hashes, reporting control-relative timing statistics, then grouping each result’s TSV durations by tool category; assertions stop execution if counts or hashes differ.
+> Comparing the first self-host timings of 12 Blynn ablation variants against the control mean and spread, asserting that every TinyCC artifact and normalized hash matches (aborting if not), and totaling each variant's per-step durations by category from its TSV file.
 
 ## Backfill earlier calls
 
@@ -111,16 +111,17 @@ summaries refresh their rows and are saved in the Pi session (memory only with
 
 Add `toolSummaries` to `~/.pi/agent/settings.json` (or your custom Pi agent directory). Trusted project `.pi/settings.json` values override global settings. Run `/reload` after editing.
 
+By default, summaries use `openrouter/anthropic/claude-haiku-5.5`. To use Pi's current model instead:
+
 ```json
 {
   "toolSummaries": {
-    "model": "openrouter/openai/gpt-6-luna",
-    "reasoning": "low"
+    "model": "current"
   }
 }
 ```
 
-Omit `model` to follow the current Pi model, or set `"current"` to override a global selection. Requests use Pi’s provider and authentication. Unavailable overrides never switch models.
+Set `model` to another `provider/model-id` to override the default. Trusted project settings can use `"current"` to override a global selection. Requests use Pi’s provider and authentication. Unavailable selections never switch models.
 
 Omit `reasoning` for provider defaults, or choose `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported levels keep the native call; `/tool-summaries` shows the reason.
 
