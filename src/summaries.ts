@@ -171,7 +171,7 @@ export class Summaries {
       }
       e.status = "idle";
       // Keep a matching prior summary visible unless its forced replacement succeeds.
-      if (!matches) e.summary = undefined;
+      if (!matches) delete e.summary;
       this.start(id, name, args, undefined, generate);
       await this.active.get(id);
       if (this.disposed || generation !== this.generation) return "cancelled";
