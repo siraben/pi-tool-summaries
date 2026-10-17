@@ -15,7 +15,7 @@ test("Pi settings merge global and trusted project namespaces and reload", async
   const projectFile = join(cwd, ".pi/settings.json");
   const load = (projectTrusted: boolean) => {
     const manager = SettingsManager.create(cwd, agentDir, { projectTrusted });
-    assert.deepEqual(manager.drainErrors(), []);
+    assert.equal(manager.drainErrors().length, 0);
     return configFromSettings(manager);
   };
   try {
@@ -60,6 +60,23 @@ test("Pi settings merge global and trusted project namespaces and reload", async
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("settings default to the current model and reject invalid configuration", () => {
+  assert.equal(readConfig().model, undefined);
+  assert.equal(readConfig().enabled, true);
+  assert.equal(
+    readConfig({ toolSummaries: { model: "provider/small" } }).provider,
+    "provider",
+  );
+  for (const settings of [
+    { model: 42 },
+    { model: "unqualified" },
+    { enabled: "yes" },
+    { reasoning: "unknown" },
+    { unknown: true },
+  ])
+    assert.throws(() => readConfig({ toolSummaries: settings }));
 });
 
 test("command threshold defaults to 150 and accepts only bounded integers", () => {

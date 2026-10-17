@@ -9,7 +9,7 @@ import { configFromSettings, type Config } from "./config.js";
 import { Summaries } from "./summaries.js";
 import { createGenerate, reasoningIssue } from "./provider.js";
 import { withSummary, withSummaryRenderers } from "./renderer.js";
-import { authenticationIssue, Requests } from "./requests.js";
+import { Requests } from "./requests.js";
 
 const summaryEntryType = "tool-summaries:summary";
 type SummaryTool = "bash" | "powershell" | "codemode";
@@ -53,18 +53,16 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
   const summarizedTools = new Set<SummaryTool>();
   const eligibleTool = (name: string) =>
     summarizedTools.has(name as SummaryTool) &&
-    // Bash is deliberately registered as our compatibility wrapper after startup;
-    // its source then becomes this extension rather than builtin.
-    (name !== "powershell" ||
+    (name === "codemode" ||
+      (name === "bash" && !canWrapRenderers) ||
       pi.getAllTools().find((tool) => tool.name === name)?.sourceInfo.source ===
         "builtin");
   let backfilling: Summaries | undefined;
-  let backfillAbort: AbortController | undefined;
   let status = "Not initialized";
   let config: Config | undefined;
   let requests = new Requests();
   const rendererAPI = pi as RendererAPI;
-  const canWrapCodemode =
+  const canWrapRenderers =
     typeof rendererAPI.registerToolRenderer === "function";
   const deferredRows = new Map<string, () => void>();
   let collectDeferredRows = true;
@@ -81,11 +79,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
     const tool = toolName as SummaryTool;
     if (tool !== "bash" && tool !== "powershell" && tool !== "codemode")
       return original;
-    // After session_start Bash already has the compatibility wrapper registered
-    // below. Before session_start (notably Pi's /reload transcript rebuild), keep
-    // a lazy wrapper on each historical row so it can bind after state restores.
-    if (tool === "bash" && summaries && summarizedTools.has("bash"))
-      return original;
+    // Historical rows can be built before session_start restores saved summaries.
     if (
       (tool === "bash" || tool === "powershell") &&
       pi.getAllTools().find((candidate) => candidate.name === tool)?.sourceInfo
@@ -123,14 +117,11 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         config!.reasoning,
         (usage) => service.recordUsage(usage),
       ),
-      (signal) => authenticationIssue(ctx.modelRegistry, model, signal),
       (text) => ctx.ui.notify(text, "warning"),
     );
   };
 
   pi.on("session_start", (_event, ctx) => {
-    backfillAbort?.abort();
-    backfillAbort = undefined;
     summaries?.dispose();
     requests = new Requests();
     summaries = undefined;
@@ -147,7 +138,6 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
     });
     try {
       config = configFromSettings(settings);
-      requests.maxRequests = config.maxRequests;
     } catch (error) {
       status = error instanceof Error ? error.message : "Invalid configuration";
       finishRendererBinding();
@@ -168,7 +158,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       .getAllTools()
       .find((tool) => tool.name === "powershell")?.sourceInfo.source;
     if (activeTools.has("powershell") || powerShellSource === "builtin") {
-      if (!canWrapCodemode)
+      if (!canWrapRenderers)
         issues.push("PowerShell summaries require Pi 1.0.1+");
       else if (powerShellSource === "builtin")
         summarizedTools.add("powershell");
@@ -176,7 +166,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
     }
     // MCP servers can activate codemode after session_start, so enable its
     // summary path whenever this Pi release can wrap the native renderer.
-    if (canWrapCodemode) summarizedTools.add("codemode");
+    if (canWrapRenderers) summarizedTools.add("codemode");
     else if (activeTools.has("codemode"))
       issues.push("Codemode summaries require Pi 1.0.1+");
     if (!summarizedTools.size) {
@@ -196,7 +186,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       if (entry.type === "custom" && entry.customType === summaryEntryType)
         summaries.restore(entry.data);
     }
-    if (summarizedTools.has("bash")) {
+    if (summarizedTools.has("bash") && !canWrapRenderers) {
       const bash = createBashToolDefinition(ctx.cwd, {
         commandPrefix: settings.getShellCommandPrefix(),
         shellPath: settings.getShellPath(),
@@ -221,15 +211,9 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       return;
     const model = summaryModel(ctx);
     if (!model) {
-      summaries.lastIssue =
-        config.modelSource === "current"
-          ? "Summary model unavailable; select a Pi model"
-          : "Summary model unavailable; check the summary model and provider authentication";
-      requests.warnOnce(
-        `missing:${config.provider ?? "current"}/${config.model ?? "current"}`,
-        summaries.lastIssue,
-        (text) => ctx.ui.notify(text, "warning"),
-      );
+      summaries.lastIssue = !config.provider
+        ? "Summary model unavailable; select a Pi model"
+        : "Summary model unavailable; check the summary model and provider authentication";
       return;
     }
     const issue = reasoningIssue(model, config.reasoning);
@@ -246,25 +230,11 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       generateFor(ctx, model),
     );
   });
-  pi.on("session_shutdown", () => {
-    backfillAbort?.abort();
-    summaries?.dispose();
-  });
+  pi.on("session_shutdown", () => summaries?.dispose());
   pi.registerCommand("tool-summaries", {
-    description:
-      "Status/usage, on/off/toggle, retry, cancel, or backfill [count] [--force]",
+    description: "Status/usage, on/off/toggle, or backfill [count] [--force]",
     handler: async (args: string, ctx: ExtensionContext) => {
       const action = args.trim();
-      if (action === "cancel") {
-        backfillAbort?.abort();
-        ctx.ui.notify(
-          backfillAbort
-            ? "Backfill cancelled; live summaries are unaffected"
-            : "No backfill is running",
-          "info",
-        );
-        return;
-      }
       if (["on", "off", "toggle"].includes(action)) {
         if (!config || !summaries) {
           ctx.ui.notify(`Cannot change summaries: ${status}`, "warning");
@@ -272,20 +242,9 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         }
         config.enabled =
           action === "toggle" ? !config.enabled : action === "on";
-        if (!config.enabled) {
-          backfillAbort?.abort();
-          summaries.cancelAll();
-        }
+        if (!config.enabled) summaries.cancelAll();
         ctx.ui.notify(
           `Summary requests ${config.enabled ? "enabled" : "paused"} for this runtime session; saved summaries remain visible`,
-          "info",
-        );
-        return;
-      }
-      if (args.trim() === "retry") {
-        requests.reset();
-        ctx.ui.notify(
-          "Summary cooldowns reset; the next eligible call will recheck authentication",
           "info",
         );
         return;
@@ -298,7 +257,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         const force = match?.[2] === "--force";
         if (!match || !Number.isSafeInteger(count)) {
           ctx.ui.notify(
-            "Usage: /tool-summaries [on|off|toggle|retry|cancel|backfill [positive message count] [--force]]",
+            "Usage: /tool-summaries [on|off|toggle|backfill [positive message count] [--force]]",
             "warning",
           );
           return;
@@ -344,8 +303,6 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
           });
         const generate = generateFor(ctx, model);
         backfilling = service;
-        const controller = new AbortController();
-        backfillAbort = controller;
         ctx.ui.notify(
           `Backfilling ${calls.length} eligible tool calls from ${messages.length} messages${force ? "; regenerating existing summaries" : ""}…`,
           "info",
@@ -361,15 +318,16 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
               call.arguments,
               generate,
               force,
-              controller.signal,
             );
             if (result === "cancelled" || summaries !== service) return;
             totals[result]++;
             if (
               result === "failed" &&
-              (stopped = requests.status(requestKey(model)))
-            )
+              requests.coolingDown(requestKey(model))
+            ) {
+              stopped = "summary model cooling down";
               break;
+            }
           }
           const storage = ctx.sessionManager.getSessionFile()
             ? "saved in the Pi session"
@@ -380,56 +338,31 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
           );
         } finally {
           if (backfilling === service) backfilling = undefined;
-          if (backfillAbort === controller) backfillAbort = undefined;
         }
         return;
       }
-      const currentRequests = requests;
-      const currentSummaries = summaries;
       const model = summaryModel(ctx);
       const selection = model
         ? `${model.provider}/${model.id}`
         : "no available model";
-      const modelSource =
-        config?.modelSource === "current"
-          ? "current Pi model"
-          : config?.modelSource === "configured"
-            ? "configured override"
-            : "default";
+      const modelSource = config?.provider
+        ? "configured override"
+        : "current Pi model";
       const lines = [
         `Tool summaries: ${selection} (${modelSource}); reasoning: ${config?.reasoning ?? "provider default"}; ${status}`,
-        `Requests: ${config?.enabled ? "enabled" : "paused"}; exclusions: ${config?.exclude.length ?? 0}`,
+        `Requests: ${config?.enabled ? "enabled" : "paused"}`,
         `Storage: ${ctx.sessionManager.getSessionFile() ? "Pi session" : "memory only (ephemeral session)"}`,
       ];
       const stats = requests.stats;
       lines.push(
-        `Runtime-session usage: ${stats.requests}/${config?.maxRequests || "unlimited"} generation attempts; usage reported for ${stats.responsesWithUsage} responses`,
+        `Usage: ${stats.requests} generation attempts; usage reported for ${stats.reported} responses`,
         `Reported tokens: input ${stats.input}, output ${stats.output}, cache read ${stats.cacheRead}, cache write ${stats.cacheWrite}`,
-        `Reported estimated cost: $${stats.estimatedCost.toFixed(6)} USD (${stats.responsesWithCost} responses with pricing; not a billing total)`,
+        `Estimated cost: $${stats.cost.toFixed(6)} USD (provider-reported, not a billing total)`,
       );
-      if (!config?.enabled) {
-        lines.push("Readiness: paused; no requests will be generated");
-      } else if (model && summarizedTools.size && config) {
-        const issue =
-          reasoningIssue(model, config.reasoning) ??
-          requests.status(requestKey(model)) ??
-          (await authenticationIssue(
-            ctx.modelRegistry,
-            model,
-            AbortSignal.timeout(config.timeoutMs),
-          ));
-        lines.push(
-          `Readiness: ${issue ?? "credentials resolved; model access, credits and endpoint availability are checked on request"}`,
-        );
-      } else {
-        lines.push("Readiness: unavailable (no active summary tools or model)");
-      }
       if (summaries?.lastPersistenceIssue)
         lines.push(summaries.lastPersistenceIssue);
       if (summaries?.lastIssue)
         lines.push(`Last fallback: ${summaries.lastIssue}`);
-      if (requests !== currentRequests || summaries !== currentSummaries)
-        return;
       ctx.ui.notify(lines.join("\n"), "info");
     },
   });

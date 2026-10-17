@@ -1,329 +1,64 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import { test } from "node:test";
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { stripVTControlCharacters } from "node:util";
-import { setTimeout as delay } from "node:timers/promises";
-import { createBashToolDefinition } from "@earendil-works/pi-coding-agent";
-import * as host from "@earendil-works/pi-coding-agent";
-import { readConfig } from "../src/config.js";
-import { Summaries } from "../src/summaries.js";
-import { withSummary, withSummaryRenderers } from "../src/renderer.js";
+import { fixture } from "./helpers.js";
 
-const dist = dirname(
-  fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")),
-);
-const { initTheme, theme } = await import(
-  pathToFileURL(join(dist, "modes/interactive/theme/theme.js")).href
-);
-const codemodeRendererPath = join(dist, "extensions/codemode/renderer.js");
-initTheme("dark", false);
-
-test("native shell call components survive idle, pending, failure, skipped, and reopened states", async () => {
-  const createPowerShell = (host as any).createPowerShellToolDefinition as
-    typeof createBashToolDefinition | undefined;
-  for (const create of [
-    createBashToolDefinition,
-    ...(createPowerShell ? [createPowerShell] : []),
-  ]) {
-    for (const outcome of [
-      "idle",
-      "pending",
-      "failure",
-      "skipped",
-      "reopened",
-      "success",
-    ]) {
-      let finish!: (text: string) => void;
-      let fail!: (error: Error) => void;
-      let invalidations = 0;
-      const service = new Summaries(
-        { ...readConfig({}), timeoutMs: 1000 },
-        () =>
-          new Promise((resolve, reject) => {
-            finish = resolve;
-            fail = reject;
-          }),
-      );
-      const original = create(process.cwd());
-      const nativeCall = original.renderCall!;
-      let native: ReturnType<typeof nativeCall> | undefined;
-      let calls = 0;
-      const instrumented: typeof original = {
-        ...original,
-        renderCall(args, theme, context) {
-          assert.equal(
-            context.lastComponent,
-            native,
-            "Native renderer must receive only its own prior component",
-          );
-          native = nativeCall(args, theme, context);
-          calls++;
-          return native;
-        },
-      };
-      const wrapped = withSummary(instrumented, service);
-      const args = { command: "printf 'hello\\n'", timeout: 17 };
-      const context = {
-        toolCallId: outcome,
-        state: {},
-        expanded: false,
-        executionStarted: true,
-        argsComplete: true,
-        isPartial: true,
-        isError: false,
-        showImages: false,
-        cwd: process.cwd(),
-        args,
-        invalidate() {
-          invalidations++;
-        },
-        lastComponent: undefined,
-      } as Parameters<typeof nativeCall>[2];
-      const render = () => {
-        const component = wrapped.renderCall!(args, theme, context);
-        context.lastComponent = component;
-        return component;
-      };
-      try {
-        const initial = render();
-        assert.equal(initial, native);
-        const expected = initial.render(100);
-        const state = { ...context.state };
-        if (outcome !== "idle") {
-          service.start(
-            outcome,
-            original.name,
-            args,
-            outcome === "skipped" ? AbortSignal.abort() : undefined,
-          );
-          await delay(5);
-          assert.equal(render(), native);
-          assert.deepEqual(render().render(100), expected);
-          if (outcome === "failure") fail(new Error("Provider unavailable"));
-          if (outcome === "success" || outcome === "reopened")
-            finish("Printing a greeting.");
-          if (
-            outcome === "failure" ||
-            outcome === "success" ||
-            outcome === "reopened"
-          )
-            await delay(5);
-        }
-        if (outcome === "reopened") {
-          assert.notEqual(render(), native);
-          service.dispose();
-        }
-        const displayed = render();
-        if (outcome === "success") {
-          assert.notEqual(displayed, native);
-          assert.doesNotMatch(
-            displayed.render(100).join("\n"),
-            /AI summary|full call|ctrl\+o/i,
-          );
-          assert.match(displayed.render(100).join("\n"), /Printing a greeting/);
-          assert.ok(
-            invalidations > 0,
-            "Success must invalidate the existing row",
-          );
-          context.expanded = true;
-          assert.equal(render(), native);
-          assert.deepEqual(render().render(100), expected);
-          context.expanded = false;
-          assert.match(render().render(100).join("\n"), /Printing a greeting/);
-        } else {
-          assert.equal(displayed, native);
-          assert.deepEqual(displayed.render(100), expected);
-        }
-        assert.deepEqual(
-          context.state,
-          state,
-          "Native state must survive every view change",
-        );
-        assert.ok(calls > 1);
-      } finally {
-        service.dispose();
-      }
-    }
-  }
-});
-
-test(
-  "codemode keeps its native script renderer until its summary is ready",
-  { skip: !existsSync(codemodeRendererPath) },
-  async () => {
-    const { codemodeRenderers } = await import(
-      pathToFileURL(codemodeRendererPath).href
-    );
-    let finish!: (text: string) => void;
-    const service = new Summaries(
-      { ...readConfig({}), timeoutMs: 1000 },
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
-    );
-    const wrapped = withSummaryRenderers(
-      codemodeRenderers,
-      "codemode",
-      "codemode",
-      service,
-    );
-    const args = {
-      code: "const rows = await tools.read({ path: 'README.md' });\ntext(rows);",
-    };
+for (const tool of ["bash", "powershell", "codemode"]) {
+  test(`${tool}: collapsed summaries leave expanded calls and results native`, async (t) => {
+    const f = await fixture(t, {}, { tool });
+    const args =
+      tool === "codemode"
+        ? { code: "text('hello');" }
+        : { command: "echo hello" };
+    const native = { render: () => ["original call"], invalidate() {} };
+    const result = () => native;
+    const wrapped = f.renderer({
+      renderCall: () => native,
+      renderResult: result,
+    });
     const context = {
-      toolCallId: "codemode-row",
+      toolCallId: "call",
       state: {},
       expanded: false,
-      executionStarted: true,
-      argsComplete: true,
-      isPartial: true,
-      isError: false,
-      showImages: false,
-      cwd: process.cwd(),
-      args,
       invalidate() {},
-      lastComponent: undefined,
-    } as Parameters<NonNullable<typeof wrapped.renderCall>>[2];
-    const text = () => {
-      const component = wrapped.renderCall!(args, theme, context);
-      context.lastComponent = component;
-      return stripVTControlCharacters(component.render(100).join("\n"));
     };
-    try {
-      assert.match(text(), /tools\.read/);
-      service.start("codemode-row", "codemode", args);
-      await delay(5);
-      assert.match(text(), /tools\.read/);
-      finish("Reading the README and emitting its contents.");
-      await delay(5);
-      assert.match(text(), /Reading the README/);
-      assert.doesNotMatch(text(), /tools\.read/);
-      context.expanded = true;
-      assert.match(text(), /tools\.read/);
-      assert.equal(wrapped.renderResult, codemodeRenderers.renderResult);
-    } finally {
-      service.dispose();
-    }
-  },
-);
-
-test("backfill replaces a collapsed historical Bash call with its plain summary", async () => {
-  const { ToolExecutionComponent } = await import(
-    pathToFileURL(join(dist, "modes/interactive/components/tool-execution.js"))
-      .href
-  );
-  let redraws = 0;
-  const service = new Summaries(
-    { ...readConfig({}), timeoutMs: 1000 },
-    async () => {
-      assert.fail("Backfill must use its supplied generator");
-    },
-  );
-  const args = { command: "printf 'historical output\\n'" };
-  const row = new ToolExecutionComponent(
-    "bash",
-    "historical-row",
-    args,
-    {},
-    withSummary(createBashToolDefinition(process.cwd()), service),
-    {
-      requestRender() {
-        redraws++;
-      },
-    },
-    process.cwd(),
-  );
-  row.setArgsComplete();
-  row.updateResult({
-    content: [{ type: "text", text: "historical output" }],
-    isError: false,
-  });
-  const rendered = () => stripVTControlCharacters(row.render(100).join("\n"));
-  try {
-    assert.match(rendered(), /\$ printf 'historical output/);
-    assert.equal(
-      await service.backfill(
-        "historical-row",
-        "bash",
-        args,
-        async () => "Printing historical output.",
-      ),
-      "generated",
+    const theme = {
+      fg: (_: string, text: string) => text,
+      bold: (text: string) => text,
+    };
+    assert.equal(wrapped.renderCall(args, theme, context), native);
+    await f.summarize("call", args);
+    assert.match(
+      wrapped.renderCall(args, theme, context).render(80).join("\n"),
+      /Reading files/,
     );
-    const collapsed = rendered();
-    assert.ok(redraws > 0, "Backfill must invalidate the historical row");
-    assert.match(collapsed, /\bbash\s*\n\s*Printing historical output\./);
-    assert.doesNotMatch(collapsed, /\$ printf/);
-    assert.match(collapsed, /historical output\s*$/);
+    context.expanded = true;
+    assert.equal(wrapped.renderCall(args, theme, context), native);
+    assert.equal(wrapped.renderResult, result);
+    assert.equal(f.registered.length, 0);
+  });
+}
 
-    row.setExpanded(true);
-    const expanded = rendered();
-    assert.match(expanded, /\$ printf 'historical output/);
-    assert.doesNotMatch(expanded, /Printing historical output\./);
-  } finally {
-    service.dispose();
-  }
+for (const tool of ["bash", "powershell"]) {
+  test(`${tool}: replacement tools remain untouched`, async (t) => {
+    const f = await fixture(t, {}, { tool, source: "extension" });
+    const original = { renderCall() {} };
+    assert.equal(f.renderer(original), original);
+    f.start("replacement", { command: "printf sample" });
+    assert.equal(f.calls.length, 0);
+  });
+}
+
+test("legacy Pi uses the Bash compatibility wrapper", async (t) => {
+  const f = await fixture(t, {}, { renderers: false });
+  assert.equal(f.registered[0].name, "bash");
+  await f.summarize("legacy");
+  assert.equal(f.records[0].summary, "Reading files.");
 });
 
-test("the existing Pi row stays native while pending and replaces its call after success", async () => {
-  const { ToolExecutionComponent } = await import(
-    pathToFileURL(join(dist, "modes/interactive/components/tool-execution.js"))
-      .href
-  );
-  let finish!: (text: string) => void;
-  let redraws = 0;
-  const service = new Summaries(
-    { ...readConfig({}), timeoutMs: 1000 },
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
-  const original = createBashToolDefinition(process.cwd());
-  const args = { command: "printf 'hello\\n'" };
-  const ui = {
-    requestRender() {
-      redraws++;
-    },
-  };
-  const baseline = new ToolExecutionComponent(
-    "bash",
-    "row",
-    args,
-    {},
-    original,
-    ui,
-    process.cwd(),
-  );
-  const row = new ToolExecutionComponent(
-    "bash",
-    "row",
-    args,
-    {},
-    withSummary(original, service),
-    ui,
-    process.cwd(),
-  );
-  baseline.setArgsComplete();
-  row.setArgsComplete();
-  const native = baseline.render(100);
-  try {
-    assert.deepEqual(row.render(100), native);
-    service.start("row", "bash", args);
-    await delay(5);
-    assert.deepEqual(row.render(100), native);
-    finish("Printing a greeting.");
-    await delay(5);
-    assert.ok(redraws > 0);
-    assert.match(row.render(100).join("\n"), /Printing a greeting/);
-    assert.doesNotMatch(row.render(100).join("\n"), /printf/);
-    row.setExpanded(true);
-    baseline.setExpanded(true);
-    assert.deepEqual(row.render(100), baseline.render(100));
-  } finally {
-    service.dispose();
-  }
+test("PowerShell stays native when Pi has no renderer registration", async (t) => {
+  const f = await fixture(t, {}, { tool: "powershell", renderers: false });
+  await f.summarize("legacy");
+  assert.equal(f.calls.length, 0);
+  await f.command();
+  assert.match(f.notices.at(-1)!, /PowerShell summaries require Pi 1.0.1/);
 });

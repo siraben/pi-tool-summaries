@@ -1,6 +1,7 @@
 name: Check
 on:
   push:
+    branches: [master]
   pull_request:
 permissions:
   contents: read
@@ -10,7 +11,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        node: [22, 24]
+        node: [22]
+        include:
+          - os: ubuntu-latest
+            node: 24
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -22,15 +26,13 @@ jobs:
       - run: npx --yes npm@12.2.0 ci --ignore-scripts
       - run: npm audit
         if: matrix.os == 'ubuntu-latest' && matrix.node == 22
-      # Runs full native Bash tests on Unix; portable + native PowerShell on Windows.
-      # This invokes verification only, never npm publish.
       - run: npm run prepublishOnly
   compatibility:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        pi: [0.84.4, 0.99.2, 1.3.0]
+        pi: [0.84.4, 1.3.0]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

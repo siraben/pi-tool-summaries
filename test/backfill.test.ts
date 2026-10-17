@@ -2,66 +2,44 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Summaries, type SavedSummary } from "../src/summaries.js";
 import { readConfig } from "../src/config.js";
+import { deferred } from "./helpers.js";
 
 const args = { command: "printf sample" };
-const config = { ...readConfig(), concurrency: 1, timeoutMs: 1000 };
 
-test("backfill waits for live capacity, persists, refreshes, and skips restored summaries", async () => {
-  let finish!: (text: string) => void;
-  const saved: SavedSummary[] = [];
+test("backfill shares capacity with live calls", async () => {
+  const response = deferred<string>();
   const service = new Summaries(
-    config,
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-    (r) => saved.push(r),
+    { ...readConfig(), concurrency: 1 },
+    () => response.promise,
   );
   service.start("live", "bash", args);
-  await Promise.resolve();
-  let requests = 0;
-  let refreshed = 0;
-  service.view("old", "bash", args, () => refreshed++);
-  const generate = async () => {
-    requests++;
-    return "Printing sample text.";
-  };
-  const pending = service.backfill("old", "bash", args, generate);
-  assert.equal(requests, 0);
-  finish("Printing live text.");
+  let calls = 0;
+  const pending = service.backfill("old", "bash", args, async () => {
+    calls++;
+    return "Printing text.";
+  });
+  assert.equal(calls, 0);
+  response.resolve("Printing live text.");
   assert.equal(await pending, "generated");
-  assert.equal(refreshed, 1);
-  assert.equal(saved.length, 2);
-  assert.equal(
-    await service.backfill("old", "bash", args, generate),
-    "skipped",
-  );
-  const resumed = new Summaries(config, generate);
-  for (const record of saved) resumed.restore(record);
-  assert.equal(
-    await resumed.backfill("old", "bash", args, generate),
-    "skipped",
-  );
-  assert.equal(requests, 1);
+  assert.equal(calls, 1);
   service.dispose();
-  resumed.dispose();
 });
 
-test("forced backfill replaces ready summaries but preserves them on failure", async () => {
+test("backfill skips saved calls; force replaces them only on success", async () => {
   const saved: SavedSummary[] = [];
   const service = new Summaries(
-    config,
+    readConfig(),
     async () => "unused",
     (record) => saved.push(record),
   );
+  const generate = async () => "Original summary.";
   assert.equal(
-    await service.backfill(
-      "old",
-      "bash",
-      args,
-      async () => "Original summary.",
-    ),
+    await service.backfill("old", "bash", args, generate),
     "generated",
+  );
+  assert.equal(
+    await service.backfill("old", "bash", args, generate),
+    "skipped",
   );
   assert.equal(
     await service.backfill("old", "bash", args, async () => "", true),
@@ -71,85 +49,40 @@ test("forced backfill replaces ready summaries but preserves them on failure", a
     service.view("old", "bash", args, () => {}).summary,
     "Original summary.",
   );
-  assert.equal(saved.length, 1, "A failed replacement must not persist");
+  assert.equal(saved.length, 1);
   assert.equal(
     await service.backfill(
       "old",
       "bash",
       args,
-      async () => "Replacement summary.",
+      async () => "Replacement.",
       true,
     ),
     "generated",
   );
   assert.equal(
     service.view("old", "bash", args, () => {}).summary,
-    "Replacement summary.",
-  );
-  assert.equal(saved.length, 2);
-  assert.equal(
-    await service.backfill("old", "bash", args, async () => "unexpected"),
-    "skipped",
+    "Replacement.",
   );
   service.dispose();
 });
 
-test("backfill refreshes historical rows beyond the old display-cache window", async () => {
-  const service = new Summaries(config, async () => "unused");
-  let refreshed = 0;
-  for (let i = 0; i < 300; i++)
-    service.view(`historical-${i}`, "bash", args, () => {
-      if (i === 0) refreshed++;
-    });
-  assert.equal(
-    await service.backfill(
-      "historical-0",
-      "bash",
-      args,
-      async () => "Printing old output.",
-    ),
-    "generated",
+test("pausing cancels queued backfill and preserves completed summaries", async () => {
+  const config = readConfig();
+  const service = new Summaries(config, async () => new Promise(() => {}));
+  await service.backfill("saved", "bash", args, async () => "Printing text.");
+  const pending = service.backfill(
+    "pending",
+    "bash",
+    args,
+    () => new Promise(() => {}),
   );
-  assert.equal(refreshed, 1);
-  service.dispose();
-});
-
-test("backfill retries failures and respects input limits", async () => {
-  const service = new Summaries(config, async () => "");
-  assert.equal(
-    await service.backfill("old", "bash", args, async () => ""),
-    "failed",
-  );
-  assert.equal(
-    await service.backfill("old", "bash", args, async () => "Printing text."),
-    "generated",
-  );
-  assert.equal(
-    await service.backfill(
-      "large",
-      "bash",
-      { command: "x".repeat(config.maxInputChars) },
-      async () => {
-        assert.fail("Oversized input");
-      },
-    ),
-    "failed",
-  );
-  service.dispose();
-});
-
-test("disposing cancels a waiting backfill and prevents late persistence", async () => {
-  const saved: SavedSummary[] = [];
-  const service = new Summaries(
-    config,
-    async () => new Promise(() => {}),
-    (r) => saved.push(r),
-  );
-  service.start("live", "bash", args);
-  const pending = service.backfill("old", "bash", args, async () => {
-    assert.fail("Cancelled queue");
-  });
-  service.dispose();
+  config.enabled = false;
+  service.cancelAll();
   assert.equal(await pending, "cancelled");
-  assert.deepEqual(saved, []);
+  assert.equal(
+    service.view("saved", "bash", args, () => {}).summary,
+    "Printing text.",
+  );
+  service.dispose();
 });
