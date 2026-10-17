@@ -25,6 +25,7 @@ export interface Config {
   maxInputChars: number;
   maxTokens: number;
   concurrency: number;
+  maxRequests: number;
 }
 
 /** Parse the toolSummaries namespace from Pi's effective settings. */
@@ -44,6 +45,7 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
     "maxInputChars",
     "maxTokens",
     "concurrency",
+    "maxRequests",
   ];
   if (Object.keys(value).some((key) => !allowed.includes(key)))
     throw new Error("Unknown toolSummaries setting");
@@ -111,6 +113,7 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
     maxInputChars: integer("maxInputChars", 24000, 100, 200000),
     maxTokens: integer("maxTokens", 1024, 64, 1024),
     concurrency: integer("concurrency", 2, 1, 8),
+    maxRequests: integer("maxRequests", 0, 0, 1000000),
   };
 }
 

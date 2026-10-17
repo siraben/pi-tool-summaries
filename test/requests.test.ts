@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { authenticationIssue, Requests } from "../src/requests.js";
 import { providerFailure } from "../src/failures.js";
+import { createGenerate } from "../src/provider.js";
+import { readConfig } from "../src/config.js";
 
 const signal = () => new AbortController().signal;
 
@@ -126,4 +128,91 @@ test("repeated provider failures cool down; cancellations do not poison model he
   );
   await assert.rejects(cancelled("{}", controller.signal));
   assert.equal(requests.status("p/b"), undefined);
+});
+
+test("parallel auth cannot overrun the runtime-session cap and retry does not reset it", async () => {
+  const requests = new Requests();
+  requests.maxRequests = 1;
+  let calls = 0;
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const generate = requests.wrap(
+    "p/a",
+    async () => {
+      calls++;
+      return "Reading files.";
+    },
+    async () => {
+      await ready;
+      return undefined;
+    },
+    () => {},
+  );
+  const first = generate("{}", signal());
+  const second = generate("{}", signal());
+  release();
+  const results = await Promise.allSettled([first, second]);
+  assert.equal(
+    results.filter((result) => result.status === "fulfilled").length,
+    1,
+  );
+  assert.equal(calls, 1);
+  assert.equal(requests.stats.requests, 1);
+  requests.reset();
+  await assert.rejects(generate("{}", signal()), /cap reached/);
+  assert.equal(calls, 1);
+  assert.equal(readConfig().maxRequests, 0);
+  for (const maxRequests of [-1, 0.5, 1000001, "2"])
+    assert.throws(
+      () => readConfig({ toolSummaries: { maxRequests } }),
+      /maxRequests/,
+    );
+});
+
+test("usage is counted for unusable final responses, with missing/invalid metrics left unknown", async () => {
+  const requests = new Requests();
+  for (const stopReason of ["stop", "error", "length", "aborted"]) {
+    const generate = createGenerate(
+      {
+        complete: async () => ({
+          stopReason,
+          content: [],
+          usage: {
+            input: 10,
+            output: 4,
+            cacheRead: 1,
+            cacheWrite: 2,
+            cost: { total: 0.001 },
+          },
+        }),
+      } as any,
+      {} as any,
+      1024,
+      undefined,
+      (usage) => requests.recordUsage(usage),
+    );
+    try {
+      await generate("{}", signal());
+    } catch {
+      /* Response errors still have usage. */
+    }
+  }
+  requests.recordUsage(undefined);
+  requests.recordUsage({ input: NaN, output: -1, cost: { total: Infinity } });
+  assert.deepEqual(requests.stats, {
+    requests: 0,
+    responsesWithUsage: 4,
+    input: 40,
+    output: 16,
+    cacheRead: 4,
+    cacheWrite: 8,
+    estimatedCost: 0.004,
+    responsesWithCost: 4,
+  });
+  requests.recordUsage({ input: 3 });
+  assert.equal(requests.stats.input, 43);
+  assert.equal(requests.stats.responsesWithUsage, 5);
+  assert.equal(requests.stats.responsesWithCost, 4);
 });

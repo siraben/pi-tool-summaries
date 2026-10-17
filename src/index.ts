@@ -99,18 +99,21 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
   const generateFor = (
     ctx: ExtensionContext,
     model: NonNullable<ExtensionContext["model"]>,
-  ) =>
-    requests.wrap(
+  ) => {
+    const service = requests;
+    return service.wrap(
       requestKey(model),
       createGenerate(
         ctx.modelRegistry,
         model,
         config!.maxTokens,
         config!.reasoning,
+        (usage) => service.recordUsage(usage),
       ),
       () => authenticationIssue(ctx.modelRegistry, model),
       (text) => ctx.ui.notify(text, "warning"),
     );
+  };
 
   pi.on("session_start", (_event, ctx) => {
     backfillAbort?.abort();
@@ -131,6 +134,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
     });
     try {
       config = configFromSettings(settings);
+      requests.maxRequests = config.maxRequests;
     } catch (error) {
       status = error instanceof Error ? error.message : "Invalid configuration";
       finishRendererBinding();
@@ -224,9 +228,19 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
   });
   pi.registerCommand("tool-summaries", {
     description:
-      "Show status, retry after login, or backfill [count] [--force] recent messages",
+      "Status/usage, on/off/toggle, retry, cancel, or backfill [count] [--force]",
     handler: async (args: string, ctx: ExtensionContext) => {
       const action = args.trim();
+      if (action === "cancel") {
+        backfillAbort?.abort();
+        ctx.ui.notify(
+          backfillAbort
+            ? "Backfill cancelled; live summaries are unaffected"
+            : "No backfill is running",
+          "info",
+        );
+        return;
+      }
       if (["on", "off", "toggle"].includes(action)) {
         if (!config || !summaries) {
           ctx.ui.notify(`Cannot change summaries: ${status}`, "warning");
@@ -260,7 +274,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         const force = match?.[2] === "--force";
         if (!match || !Number.isSafeInteger(count)) {
           ctx.ui.notify(
-            "Usage: /tool-summaries [backfill [positive message count] [--force]]",
+            "Usage: /tool-summaries [on|off|toggle|retry|cancel|backfill [positive message count] [--force]]",
             "warning",
           );
           return;
@@ -315,6 +329,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
           "info",
         );
         const totals = { generated: 0, skipped: 0, failed: 0 };
+        let stopped: string | undefined;
         try {
           // One queued request at a time leaves room for live summaries.
           for (const call of calls) {
@@ -328,12 +343,17 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
             );
             if (result === "cancelled" || summaries !== service) return;
             totals[result]++;
+            if (
+              result === "failed" &&
+              (stopped = requests.status(requestKey(model)))
+            )
+              break;
           }
           const storage = ctx.sessionManager.getSessionFile()
             ? "saved in the Pi session"
             : "memory only (ephemeral session)";
           ctx.ui.notify(
-            `Backfill complete: ${totals.generated} generated, ${totals.skipped} already summarized, ${totals.failed} failed; ${storage}.${service.lastPersistenceIssue ? ` ${service.lastPersistenceIssue}` : ""}`,
+            `Backfill complete: ${totals.generated} generated, ${totals.skipped} already summarized, ${totals.failed} failed; ${storage}.${stopped ? ` Stopped: ${stopped}.` : ""}${service.lastPersistenceIssue ? ` ${service.lastPersistenceIssue}` : ""}`,
             service.lastPersistenceIssue || totals.failed ? "warning" : "info",
           );
         } finally {
@@ -357,7 +377,15 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         `Requests: ${config?.enabled ? "enabled" : "paused"}; exclusions: ${config?.exclude.length ?? 0}`,
         `Storage: ${ctx.sessionManager.getSessionFile() ? "Pi session" : "memory only (ephemeral session)"}`,
       ];
-      if (model && summarizedTools.size && config) {
+      const stats = requests.stats;
+      lines.push(
+        `Runtime-session usage: ${stats.requests}/${config?.maxRequests || "unlimited"} generation attempts; usage reported for ${stats.responsesWithUsage} responses`,
+        `Reported tokens: input ${stats.input}, output ${stats.output}, cache read ${stats.cacheRead}, cache write ${stats.cacheWrite}`,
+        `Reported estimated cost: $${stats.estimatedCost.toFixed(6)} USD (${stats.responsesWithCost} responses with pricing; not a billing total)`,
+      );
+      if (!config?.enabled) {
+        lines.push("Readiness: paused; no requests will be generated");
+      } else if (model && summarizedTools.size && config) {
         const issue =
           reasoningIssue(model, config.reasoning) ??
           requests.status(requestKey(model)) ??

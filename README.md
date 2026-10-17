@@ -114,7 +114,7 @@ For persistent controls in Pi settings:
 
 Run `/tool-summaries` to see the selected model, credential readiness, and the last safe failure reason. Readiness resolves credentials through Pi (including supported OAuth refresh); it is **not** a network/billing probe. Raw provider errors and credentials are never displayed.
 
-Authentication/access errors and HTTP 429 responses pause requests to that model for 60 seconds. Three consecutive provider failures also start a cooldown. A problem is notified once per model per runtime session, not once per tool call. No automatic retries or model/provider fallbacks are made. Tool execution and the original view continue normally.
+Authentication/access errors and HTTP 429 responses pause requests to that model for 60 seconds. Three consecutive provider failures also start a cooldown. A problem is notified once per model until an explicit `retry` or runtime reset, not once per tool call. No automatic retries or model/provider fallbacks are made. Tool execution and the original view continue normally.
 
 After `/login`, fixing configuration, or waiting for provider recovery, run `/tool-summaries retry` to clear cooldowns immediately, or `/reload`. Otherwise the next eligible call after cooldown expiry tries again. `retry` does not execute old commands or regenerate old summaries; use backfill for those.
 
@@ -130,9 +130,17 @@ retried. The usual source-length and input-size limits apply.
 
 Backfill makes one model request at a time, waiting for capacity shared with live
 summaries. It uses the summary model selected when the command starts and incurs
-normal provider costs. It never executes the recorded commands. Completed
+normal provider costs. `/tool-summaries cancel` stops only backfill, leaving live summaries running; `/tool-summaries off` cancels both. Cancellation cannot undo already-sent requests or charges. Backfill stops early on a model cooldown or request cap rather than hammering every recorded call. It never executes the recorded commands. Completed
 summaries refresh their rows and are saved in the Pi session (memory only with
 `--no-session`). Closing or changing sessions cancels unfinished work.
+
+## Usage and request caps
+
+`/tool-summaries` reports generation attempts, provider-reported input/output/cache tokens, and estimated USD cost. Counts include failed generation attempts and final responses with unusable summaries when usage is supplied. Missing usage/pricing, interrupted requests, provider-internal retries, subscriptions, custom catalog prices and late responses make these **best-effort estimates, not billing totals**. A reported zero is not proof that a request was free. These counters are extension-local, not added to Pi's main conversation totals.
+
+Set `"maxRequests": 100` in `toolSummaries` to cap generation attempts across live calls and backfill together. The default `0` is unlimited. Requests reserve capacity after authentication and before generation, so parallel calls cannot overrun this extension-level cap. Excluded, disabled, oversized and credential-preflight failures do not consume it. It caps registry generation attempts, not HTTP exchanges or dollars. `retry`, pause/resume and changing models do not reset it.
+
+Counters, caps, cooldowns and session toggles reset on `/reload`, restart or session replacement; they are not persisted spending limits. Model changes within the running session retain the shared cap. `maxTokens` bounds the requested output, not total input/reasoning cost, and some providers may interpret or ignore generation controls differently.
 
 ## Configuration
 
@@ -170,7 +178,7 @@ Omit `reasoning` for provider defaults, or choose `off`, `minimal`, `low`, `medi
 
 Bash commands and codemode scripts shorter than `minCommandChars` (150 by default) keep their native view without a summary request. Set it to `0` to summarize every call. Only characters in the command or script itself count.
 
-Other optional settings: `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (1024), and `concurrency` (2).
+Other optional settings: `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (1024), `concurrency` (2), and `maxRequests` (0, unlimited).
 
 Only visible built-in Bash calls and active codemode calls in interactive Pi sessions are summarized. Nested calls and replacement Bash tools are skipped. Busy, oversized, or failed requests keep the original view. Successful summaries are saved in Pi’s session JSONL and restored when you reload or resume; with `--no-session`, they stay in memory only. Ctrl+O never makes another request.
 
