@@ -31,6 +31,43 @@ interface Health {
 export class Requests {
   private health = new Map<string, Health>();
   private warnings = new Set<string>();
+  maxRequests = 0;
+  readonly stats = {
+    requests: 0,
+    responsesWithUsage: 0,
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    estimatedCost: 0,
+    responsesWithCost: 0,
+  };
+
+  recordUsage(usage: unknown): void {
+    if (!usage || typeof usage !== "object") return;
+    const value = usage as Record<string, unknown>;
+    const valid = (n: unknown): n is number =>
+      typeof n === "number" && Number.isFinite(n) && n >= 0;
+    const fields = ["input", "output", "cacheRead", "cacheWrite"] as const;
+    if (!fields.some((field) => valid(value[field]))) return;
+    this.stats.responsesWithUsage++;
+    for (const field of fields)
+      if (valid(value[field])) this.stats[field] += value[field];
+    const cost =
+      value.cost && typeof value.cost === "object"
+        ? (value.cost as Record<string, unknown>).total
+        : undefined;
+    if (valid(cost)) {
+      this.stats.estimatedCost += cost;
+      this.stats.responsesWithCost++;
+    }
+  }
+
+  private checkBudget(): void {
+    if (this.maxRequests > 0 && this.stats.requests >= this.maxRequests)
+      throw new SummaryFailure("Runtime-session summary request cap reached");
+  }
+
   constructor(
     private now = Date.now,
     private cooldownMs = 60_000,
@@ -50,6 +87,8 @@ export class Requests {
   }
 
   status(key: string): string | undefined {
+    if (this.maxRequests > 0 && this.stats.requests >= this.maxRequests)
+      return "Runtime-session summary request cap reached";
     const health = this.health.get(key);
     if (health && health.until > this.now())
       return `${health.issue}; cooldown ${Math.ceil((health.until - this.now()) / 1000)}s remaining`;
@@ -64,10 +103,14 @@ export class Requests {
     return async (input, signal) => {
       const cooling = this.status(key);
       if (cooling) throw new SummaryFailure(cooling);
+      this.checkBudget();
       try {
         const issue = await checkAuth();
         signal.throwIfAborted();
         if (issue) throw new SummaryFailure(issue, undefined, "authentication");
+        // Recheck after asynchronous auth so parallel calls cannot overrun the cap.
+        this.checkBudget();
+        this.stats.requests++;
         const result = await generate(input, signal);
         signal.throwIfAborted();
         this.health.delete(key);

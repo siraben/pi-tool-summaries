@@ -76,6 +76,7 @@ export function createGenerate(
   model: SummaryModel,
   maxTokens: number,
   reasoning?: ReasoningLevel,
+  onUsage?: (usage: unknown) => void,
 ): Generate {
   return async (input, signal) => {
     const issue = reasoningIssue(model, reasoning);
@@ -158,6 +159,8 @@ export function createGenerate(
         throw new SummaryFailure("Summary cancelled by provider", error);
       throw providerFailure(error);
     }
+    // Account for final responses even if their prose is unusable or the caller cancelled.
+    onUsage?.(response.usage);
     if (signal.aborted) throw signal.reason;
     if (response.stopReason === "error") throw providerFailure(response);
     if (response.stopReason === "aborted")
