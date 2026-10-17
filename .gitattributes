@@ -1,0 +1,2 @@
+# Keep source/fixtures consistent on Windows and Unix without touching binary assets.
+* text=auto eol=lf
