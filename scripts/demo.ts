@@ -18,6 +18,7 @@ import { configFromSettings } from "../src/config.js";
 import { createGenerate } from "../src/provider.js";
 import { Summaries } from "../src/summaries.js";
 import { withSummary } from "../src/renderer.js";
+import { authenticationIssue } from "../src/requests.js";
 
 // The demo deliberately uses Pi's pinned native component; the extension itself uses only public APIs.
 const dist = dirname(
@@ -46,7 +47,14 @@ const provider = config.provider ?? settings.getDefaultProvider();
 const modelId = config.model ?? settings.getDefaultModel();
 const model =
   provider && modelId ? registry.find(provider, modelId) : undefined;
-if (!model || !registry.hasConfiguredAuth(model)) {
+if (
+  !model ||
+  (await authenticationIssue(
+    registry,
+    model,
+    AbortSignal.timeout(config.timeoutMs),
+  ))
+) {
   console.error(
     "Configure the summary model and Pi credential before running the demo.",
   );

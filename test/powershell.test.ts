@@ -26,6 +26,8 @@ test("PowerShell uses its native renderer, summarizes/backfills command argument
   const requests: any[] = [],
     records: any[] = [],
     notices: string[] = [];
+  let source = "builtin";
+  let activeTools = ["read"];
   const args = {
     command:
       "$items = Get-ChildItem -LiteralPath .; $items | Where-Object { $_.Extension -eq '.ts' } | Select-Object Name",
@@ -85,13 +87,12 @@ test("PowerShell uses its native renderer, summarizes/backfills command argument
       registerTool() {
         assert.fail("Never recreate or replace native PowerShell execution");
       },
-      getActiveTools: () => ["powershell"],
-      getAllTools: () => [
-        { name: "powershell", sourceInfo: { source: "builtin" } },
-      ],
+      getActiveTools: () => activeTools,
+      getAllTools: () => [{ name: "powershell", sourceInfo: { source } }],
       appendEntry: (_: string, record: unknown) => records.push(record),
     } as unknown as host.ExtensionAPI);
     events.get("session_start")!({}, ctx);
+    activeTools = ["read", "powershell"];
     const native = { render: () => [`PS> ${args.command}`], invalidate() {} };
     const original = {
       renderCall: () => native,
@@ -139,6 +140,18 @@ test("PowerShell uses its native renderer, summarizes/backfills command argument
       },
       ctx,
     );
+    source = "extension";
+    assert.equal(
+      resolver("powershell", () => original),
+      original,
+    );
+    events.get("tool_execution_start")!(
+      { toolName: "powershell", toolCallId: "replacement", args },
+      ctx,
+    );
+    await delay(5);
+    assert.equal(requests.length, 2);
+    source = "builtin";
     await command("off", ctx);
     events.get("tool_execution_start")!(
       { toolName: "powershell", toolCallId: "paused", args },

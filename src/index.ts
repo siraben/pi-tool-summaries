@@ -51,6 +51,13 @@ function toolList(tools: Set<SummaryTool>): string {
 export default function plainToolSummaries(pi: ExtensionAPI): void {
   let summaries: Summaries | undefined;
   const summarizedTools = new Set<SummaryTool>();
+  const eligibleTool = (name: string) =>
+    summarizedTools.has(name as SummaryTool) &&
+    // Bash is deliberately registered as our compatibility wrapper after startup;
+    // its source then becomes this extension rather than builtin.
+    (name !== "powershell" ||
+      pi.getAllTools().find((tool) => tool.name === name)?.sourceInfo.source ===
+        "builtin");
   let backfilling: Summaries | undefined;
   let backfillAbort: AbortController | undefined;
   let status = "Not initialized";
@@ -156,14 +163,14 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         summarizedTools.add("bash");
       else issues.push("Skipped replacement Bash tool");
     }
-    // Wrap native PowerShell in place: never recreate its execution/configuration.
-    if (activeTools.has("powershell")) {
+    // Wrap native PowerShell in place, including activation after session_start.
+    const powerShellSource = pi
+      .getAllTools()
+      .find((tool) => tool.name === "powershell")?.sourceInfo.source;
+    if (activeTools.has("powershell") || powerShellSource === "builtin") {
       if (!canWrapCodemode)
         issues.push("PowerShell summaries require Pi 1.0.1+");
-      else if (
-        pi.getAllTools().find((tool) => tool.name === "powershell")?.sourceInfo
-          .source === "builtin"
-      )
+      else if (powerShellSource === "builtin")
         summarizedTools.add("powershell");
       else issues.push("Skipped replacement PowerShell tool");
     }
@@ -204,7 +211,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
     // Pi 1.0 nested calls have no transcript row to display a summary in.
     if (
       ("parentToolCallId" in event && event.parentToolCallId) ||
-      !summarizedTools.has(event.toolName as SummaryTool) ||
+      !eligibleTool(event.toolName) ||
       !summaries ||
       !config?.enabled
     )
@@ -325,9 +332,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
             message.role === "assistant"
               ? message.content
                   .filter((part) => part.type === "toolCall")
-                  .filter((part) =>
-                    summarizedTools.has(part.name as SummaryTool),
-                  )
+                  .filter((part) => eligibleTool(part.name))
               : [],
           )
           .filter((call) => {

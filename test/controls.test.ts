@@ -103,6 +103,9 @@ async function fixture(settings: object = {}) {
       ),
     command: (text: string) => command(text, ctx),
     restart: () => events.get("session_start")!({}, ctx),
+    mode: (value: string) => {
+      ctx.mode = value;
+    },
     async close() {
       events.get("session_shutdown")!({}, ctx);
       await delay(5);
@@ -125,6 +128,23 @@ const call = (id: string) => ({
       },
     ],
   },
+});
+
+test("non-interactive modes never issue display-summary requests", async () => {
+  const f = await fixture();
+  try {
+    for (const mode of ["print", "json", "rpc", "sdk"]) {
+      f.mode(mode);
+      f.restart();
+      f.start(mode);
+      await delay(5);
+      await f.command("backfill");
+      assert.equal(f.calls.length, 0);
+      assert.match(f.notices.at(-1)!, /Disabled outside interactive mode/);
+    }
+  } finally {
+    await f.close();
+  }
 });
 
 test("persistent disable can be overridden for the runtime only", async () => {

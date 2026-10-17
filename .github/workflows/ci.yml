@@ -22,14 +22,9 @@ jobs:
       - run: npx --yes npm@12.2.0 ci --ignore-scripts
       - run: npm audit
         if: matrix.os == 'ubuntu-latest' && matrix.node == 22
-      - run: npm run format:check
-      - run: npm run check
-      - run: npm test
-        if: runner.os != 'Windows'
-      # Native Bash execution is covered on Linux/macOS, not PowerShell or WSL.
-      - run: npm run test:portable
-        if: runner.os == 'Windows'
-      - run: npm run test:package
+      # Runs full native Bash tests on Unix; portable + native PowerShell on Windows.
+      # This invokes verification only, never npm publish.
+      - run: npm run prepublishOnly
   compatibility:
     runs-on: ubuntu-latest
     strategy:
