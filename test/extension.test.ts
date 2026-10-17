@@ -428,8 +428,8 @@ test("current override follows the Pi model and captures it independently for ea
     model: first as typeof first | undefined,
     isProjectTrusted: () => false,
     ui: {
-      notify() {
-        assert.fail("No unsolicited notifications");
+      notify(text: string) {
+        assert.match(text, /Summary model unavailable/);
       },
     },
     modelRegistry: {

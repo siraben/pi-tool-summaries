@@ -9,6 +9,7 @@ import { configFromSettings, type Config } from "./config.js";
 import { Summaries } from "./summaries.js";
 import { createGenerate, reasoningIssue } from "./provider.js";
 import { withSummary, withSummaryRenderers } from "./renderer.js";
+import { authenticationIssue, Requests } from "./requests.js";
 
 const summaryEntryType = "tool-summaries:summary";
 type SummaryTool = "bash" | "codemode";
@@ -48,6 +49,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
   let backfilling: Summaries | undefined;
   let status = "Not initialized";
   let config: Config | undefined;
+  let requests = new Requests();
   const rendererAPI = pi as RendererAPI;
   const canWrapCodemode =
     typeof rendererAPI.registerToolRenderer === "function";
@@ -91,8 +93,27 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       ? ctx.modelRegistry.find(config.provider, config.model)
       : ctx.model;
 
+  const requestKey = (model: NonNullable<ExtensionContext["model"]>) =>
+    `${model.provider}/${model.id}`;
+  const generateFor = (
+    ctx: ExtensionContext,
+    model: NonNullable<ExtensionContext["model"]>,
+  ) =>
+    requests.wrap(
+      requestKey(model),
+      createGenerate(
+        ctx.modelRegistry,
+        model,
+        config!.maxTokens,
+        config!.reasoning,
+      ),
+      () => authenticationIssue(ctx.modelRegistry, model),
+      (text) => ctx.ui.notify(text, "warning"),
+    );
+
   pi.on("session_start", (_event, ctx) => {
     summaries?.dispose();
+    requests = new Requests();
     summaries = undefined;
     config = undefined;
     summarizedTools.clear();
@@ -173,6 +194,11 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         config.modelSource === "current"
           ? "Summary model unavailable; select a Pi model"
           : "Summary model unavailable; check the summary model and provider authentication";
+      requests.warnOnce(
+        `missing:${config.provider ?? "current"}/${config.model ?? "current"}`,
+        summaries.lastIssue,
+        (text) => ctx.ui.notify(text, "warning"),
+      );
       return;
     }
     const issue = reasoningIssue(model, config.reasoning);
@@ -186,19 +212,22 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       event.toolName,
       event.args,
       ctx.signal,
-      createGenerate(
-        ctx.modelRegistry,
-        model,
-        config.maxTokens,
-        config.reasoning,
-      ),
+      generateFor(ctx, model),
     );
   });
   pi.on("session_shutdown", () => summaries?.dispose());
   pi.registerCommand("tool-summaries", {
     description:
-      "Show status, or backfill [count] [--force] recent messages (default 100)",
+      "Show status, retry after login, or backfill [count] [--force] recent messages",
     handler: async (args: string, ctx: ExtensionContext) => {
+      if (args.trim() === "retry") {
+        requests.reset();
+        ctx.ui.notify(
+          "Summary cooldowns reset; the next eligible call will recheck authentication",
+          "info",
+        );
+        return;
+      }
       if (args.trim()) {
         const match = /^backfill(?:\s+([1-9]\d*))?(?:\s+(--force))?$/.exec(
           args.trim(),
@@ -250,12 +279,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
               [...source].length >= config!.minCommandChars
             );
           });
-        const generate = createGenerate(
-          ctx.modelRegistry,
-          model,
-          config.maxTokens,
-          config.reasoning,
-        );
+        const generate = generateFor(ctx, model);
         backfilling = service;
         ctx.ui.notify(
           `Backfilling ${calls.length} eligible tool calls from ${messages.length} messages${force ? "; regenerating existing summaries" : ""}…`,
@@ -301,6 +325,17 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         `Tool summaries: ${selection} (${modelSource}); reasoning: ${config?.reasoning ?? "provider default"}; ${status}`,
         `Storage: ${ctx.sessionManager.getSessionFile() ? "Pi session" : "memory only (ephemeral session)"}`,
       ];
+      if (model && summarizedTools.size && config) {
+        const issue =
+          reasoningIssue(model, config.reasoning) ??
+          requests.status(requestKey(model)) ??
+          (await authenticationIssue(ctx.modelRegistry, model));
+        lines.push(
+          `Readiness: ${issue ?? "credentials resolved; model access, credits and endpoint availability are checked on request"}`,
+        );
+      } else {
+        lines.push("Readiness: unavailable (no active summary tools or model)");
+      }
       if (summaries?.lastPersistenceIssue)
         lines.push(summaries.lastPersistenceIssue);
       if (summaries?.lastIssue)

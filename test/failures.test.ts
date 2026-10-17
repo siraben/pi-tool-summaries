@@ -11,7 +11,7 @@ test("provider failures retain safe status and distinguish unusable responses", 
   for (const [response, expected] of [
     [
       { stopReason: "error", errorMessage: `429 ${secret}`, content: [] },
-      /Provider\/API failure \(HTTP 429\)/,
+      /Provider rate limited \(HTTP 429\)/,
     ],
     [{ stopReason: "length", content: [] }, /output token limit/],
     [{ stopReason: "aborted", content: [] }, /cancelled by provider/],
@@ -49,7 +49,7 @@ test("provider failures retain safe status and distinguish unusable responses", 
   );
   await assert.rejects(
     generate("{}", new AbortController().signal),
-    /Provider\/API failure \(HTTP 401\)/,
+    /Provider authentication\/access unavailable \(HTTP 401\)/,
   );
   assert.equal(
     providerFailure(new Error(secret)).message,
