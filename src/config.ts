@@ -11,10 +11,7 @@ export const reasoningLevels = [
 ] as const;
 export type ReasoningLevel = (typeof reasoningLevels)[number];
 
-export const defaultSummaryModel = {
-  provider: "openrouter",
-  model: "anthropic/claude-haiku-5.5",
-} as const;
+export const defaultSummaryModel = "current";
 
 export interface Config {
   provider?: string;
@@ -66,14 +63,10 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
     throw new Error(
       `toolSummaries.reasoning must be one of: ${reasoningLevels.join(", ")}`,
     );
-  let provider: string | undefined = defaultSummaryModel.provider;
-  let model: string | undefined = defaultSummaryModel.model;
-  let modelSource: Config["modelSource"] = "default";
-  if (value.model === "current") {
-    provider = undefined;
-    model = undefined;
-    modelSource = "current";
-  } else if (value.model !== undefined) {
+  let provider: string | undefined;
+  let model: string | undefined;
+  let modelSource: Config["modelSource"] = "current";
+  if (value.model !== undefined && value.model !== defaultSummaryModel) {
     if (typeof value.model !== "string")
       throw new Error(
         "toolSummaries.model must be current or provider/model-id",

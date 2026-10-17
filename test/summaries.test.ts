@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { defaultSummaryModel, readConfig } from "../src/config.js";
+import { readConfig } from "../src/config.js";
 import { cleanSummary, Summaries } from "../src/summaries.js";
 
 const config = { ...readConfig({}), timeoutMs: 20 };
@@ -9,14 +9,9 @@ const args = { command: "find src -name '*.ts' -print" };
 const tick = () => delay(5);
 
 test("settings validate malformed limits and model references", () => {
-  assert.deepEqual(
-    {
-      provider: readConfig({}).provider,
-      model: readConfig({}).model,
-      source: readConfig({}).modelSource,
-    },
-    { ...defaultSummaryModel, source: "default" },
-  );
+  assert.equal(readConfig().provider, undefined);
+  assert.equal(readConfig().model, undefined);
+  assert.equal(readConfig().modelSource, "current");
   assert.throws(
     () => readConfig({ toolSummaries: { model: "cheap" } }),
     /provider/,

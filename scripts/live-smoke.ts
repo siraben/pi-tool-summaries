@@ -5,13 +5,16 @@ import { createGenerate } from "../src/provider.js";
 import { cleanSummary } from "../src/summaries.js";
 
 try {
-  const config = configFromSettings(
-    SettingsManager.create(process.cwd(), undefined, { projectTrusted: false }),
-  );
-  if (!config.provider || !config.model) throw new Error("configuration");
+  const settings = SettingsManager.create(process.cwd(), undefined, {
+    projectTrusted: false,
+  });
+  const config = configFromSettings(settings);
+  const provider = config.provider ?? settings.getDefaultProvider();
+  const modelId = config.model ?? settings.getDefaultModel();
+  if (!provider || !modelId) throw new Error("configuration");
   const runtime = await ModelRuntime.create({ allowModelNetwork: false });
   const registry = new ModelRegistry(runtime);
-  const model = registry.find(config.provider, config.model);
+  const model = registry.find(provider, modelId);
   if (!model || !registry.hasConfiguredAuth(model)) {
     console.error(
       "Live test needs a known model and a credential configured in Pi or the provider environment. No request sent.",
@@ -44,7 +47,7 @@ try {
     const safe = cleanSummary(summary);
     if (!safe || safe.length > 2000)
       throw new Error("empty or oversized response");
-    console.log(`Model: ${config.provider}/${config.model}`);
+    console.log(`Model: ${model.provider}/${model.id}`);
     console.log(`Time: ${Date.now() - start} ms`);
     console.log(`Summary: ${safe}`);
   }
