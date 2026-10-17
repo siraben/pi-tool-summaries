@@ -141,6 +141,34 @@ test("repeated provider failures cool down; cancellations do not poison model he
   assert.equal(requests.status("p/b"), undefined);
 });
 
+test("a request waiting for auth respects a cooldown activated by a sibling", async () => {
+  const requests = new Requests(() => 0, 1000);
+  let checks = 0,
+    calls = 0;
+  let release!: () => void;
+  const generate = requests.wrap(
+    "p/a",
+    async () => {
+      calls++;
+      throw providerFailure({ status: 429 });
+    },
+    async () => {
+      if (++checks === 2)
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      return undefined;
+    },
+    () => {},
+  );
+  const first = generate("{}", signal());
+  const second = generate("{}", signal());
+  await assert.rejects(first, /rate limited/);
+  release();
+  await assert.rejects(second, /cooldown/);
+  assert.equal(calls, 1);
+});
+
 test("parallel auth cannot overrun the runtime-session cap and retry does not reset it", async () => {
   const requests = new Requests();
   requests.maxRequests = 1;

@@ -135,6 +135,16 @@ export class Summaries {
     return e.fingerprint === fingerprint(name, args) ? e : { status: "idle" };
   }
 
+  private invalidate(id: string, e: Entry): void {
+    if (this.disposed || this.entries.get(id) !== e) return;
+    try {
+      e.invalidate?.();
+    } catch {
+      // A stale/disposed renderer must not reject background work or discard a summary.
+      this.lastIssue = "Could not refresh summary view";
+    }
+  }
+
   private ready(id: string, e: Entry, summary: string): void {
     e.summary = summary;
     e.status = "ready";
@@ -150,7 +160,7 @@ export class Summaries {
     } catch {
       this.lastPersistenceIssue = "Could not persist summary in the session";
     }
-    if (this.entries.get(id) === e) e.invalidate?.();
+    this.invalidate(id, e);
   }
 
   /** Backfill waits for capacity and can retry failures or forcibly replace a ready summary. */
@@ -282,7 +292,7 @@ export class Summaries {
         error instanceof SummaryFailure
           ? error.message
           : "Summary generation failed (unknown cause)";
-      if (!this.disposed && this.entries.get(id) === e) e.invalidate?.();
+      this.invalidate(id, e);
     } finally {
       clearTimeout(timer);
       parentSignal?.removeEventListener("abort", abort);
