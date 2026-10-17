@@ -124,6 +124,8 @@ export class Requests {
         const issue = await checkAuth(signal);
         signal.throwIfAborted();
         if (issue) throw new SummaryFailure(issue, undefined, "authentication");
+        const blocked = this.status(key);
+        if (blocked) throw new SummaryFailure(blocked);
         // Recheck after asynchronous auth so parallel calls cannot overrun the cap.
         this.checkBudget();
         this.stats.requests++;

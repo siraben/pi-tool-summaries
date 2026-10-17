@@ -82,6 +82,27 @@ test("requests are asynchronous, deduplicated, and tied to exact call arguments"
   service.dispose();
 });
 
+test("stale renderer failures cannot reject background work or discard a saved summary", async () => {
+  const saved: unknown[] = [];
+  const service = new Summaries(
+    readConfig(),
+    async () => "Reading files.",
+    (record) => saved.push(record),
+  );
+  service.start("view", "bash", args);
+  service.view("view", "bash", args, () => {
+    throw new Error("private renderer detail");
+  });
+  await tick();
+  assert.equal(saved.length, 1);
+  assert.equal(
+    service.view("view", "bash", args, () => {}).summary,
+    "Reading files.",
+  );
+  assert.equal(service.lastIssue, "Could not refresh summary view");
+  service.dispose();
+});
+
 test("timeouts abort providers even if they never resolve; failures remain original calls", async () => {
   let signal!: AbortSignal;
   const service = new Summaries(config, async (_input, s) => {
