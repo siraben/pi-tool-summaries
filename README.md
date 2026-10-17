@@ -9,7 +9,7 @@ Plain-language summaries of Bash and codemode tool calls.
 Requires **Pi 0.84.4+** and Node 22.19+. Codemode summaries require Pi 1.0.1+; Bash summaries continue to work on earlier supported releases. Tested with Pi 0.84.4, 0.99.2, and 1.0.4.
 
 ```sh
-pi install git:github.com/siraben/pi-tool-summaries
+pi install npm:pi-tool-summaries
 ```
 
 Restart Pi or run `/reload`. Use `/tool-summaries` to inspect the effective model and status. When Pi's `codemode` tool is active, its JavaScript calls are summarized alongside Bash calls.
