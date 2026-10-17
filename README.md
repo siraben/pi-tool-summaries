@@ -1,6 +1,6 @@
 # Pi Tool Summaries
 
-![Before: a fail-fast Bash workflow that bootstraps RISC-V stage0 tools under QEMU. After: its Haiku 5.5-generated plain-language summary.](docs/before-after.svg)
+![Before: the full Bash command from Compare compiler binaries. After: its Haiku 5.5-generated plain-language summary.](docs/before-after.svg)
 
 Plain-language summaries of Bash, PowerShell and codemode tool calls.
 
