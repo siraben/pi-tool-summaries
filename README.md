@@ -111,7 +111,7 @@ summaries refresh their rows and are saved in the Pi session (memory only with
 
 Add `toolSummaries` to `~/.pi/agent/settings.json` (or your custom Pi agent directory). Trusted project `.pi/settings.json` values override global settings. Run `/reload` after editing.
 
-By default, summaries use `openrouter/anthropic/claude-haiku-5.5`. To use Pi's current model instead:
+By default, summaries reuse Pi's current model and its authentication. No separate provider account is required. Set `"model": "current"` explicitly to override a global dedicated-model selection:
 
 ```json
 {
@@ -121,7 +121,23 @@ By default, summaries use `openrouter/anthropic/claude-haiku-5.5`. To use Pi's c
 }
 ```
 
-Set `model` to another `provider/model-id` to override the default. Trusted project settings can use `"current"` to override a global selection. Requests use Pi’s provider and authentication. Unavailable selections never switch models.
+Set `model` to a `provider/model-id` for a dedicated model, for example `"openrouter/anthropic/claude-haiku-5.5"`. Requests use Pi's provider and request-time authentication; custom endpoints registered in Pi work the same way. Unavailable selections never switch models or providers.
+
+### Dedicated Haiku model (optional)
+
+Create an API key at [OpenRouter](https://openrouter.ai/settings/keys) and arrange sufficient credits for the selected model. In Pi, run `/login` and choose OpenRouter, or set `OPENROUTER_API_KEY` in the environment **before starting Pi**. Then configure:
+
+```json
+{
+  "toolSummaries": {
+    "model": "openrouter/anthropic/claude-haiku-5.5"
+  }
+}
+```
+
+Check credentials with `pi auth check --provider openrouter --json` on Pi versions supporting that command. Configured credentials do not guarantee credits, model access, or endpoint availability. A ChatGPT/Codex subscription login or direct Anthropic key does **not** authenticate OpenRouter. With `"model": "current"`, Pi instead uses the selected provider's own API key, OAuth/subscription, or ambient cloud credentials as supported by that provider. Subscription endpoints may reject models or request options they do not support.
+
+For local models, register a compatible endpoint in Pi's `models.json` and select it with `/model` or a dedicated `provider/model-id`. Follow [Pi's model setup](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md), including any dummy key required by the endpoint. Never put keys in `toolSummaries` or commit Pi's `auth.json`. npm login is only needed to publish this package, not to install or use it.
 
 Omit `reasoning` for provider defaults, or choose `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported levels keep the native call; `/tool-summaries` shows the reason.
 

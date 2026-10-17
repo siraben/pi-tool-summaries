@@ -36,15 +36,16 @@ const { KeybindingsManager } = await import(
 );
 setKeybindings(new KeybindingsManager());
 
-const config = configFromSettings(
-  SettingsManager.create(process.cwd(), undefined, { projectTrusted: false }),
-);
+const settings = SettingsManager.create(process.cwd(), undefined, {
+  projectTrusted: false,
+});
+const config = configFromSettings(settings);
 const runtime = await ModelRuntime.create({ allowModelNetwork: false });
 const registry = new ModelRegistry(runtime);
+const provider = config.provider ?? settings.getDefaultProvider();
+const modelId = config.model ?? settings.getDefaultModel();
 const model =
-  config.provider && config.model
-    ? registry.find(config.provider, config.model)
-    : undefined;
+  provider && modelId ? registry.find(provider, modelId) : undefined;
 if (!model || !registry.hasConfiguredAuth(model)) {
   console.error(
     "Configure the summary model and Pi credential before running the demo.",
@@ -94,7 +95,7 @@ let expanded = false;
 if (ui) {
   ui.addChild(
     new Text(
-      `Live Pi renderer demo — ${config.provider}/${config.model}\nCtrl+O: toggle full command   q: exit\nThe displayed command only lists this project's TypeScript source files.`,
+      `Live Pi renderer demo — ${model.provider}/${model.id}\nCtrl+O: toggle full command   q: exit\nThe displayed command only lists this project's TypeScript source files.`,
       0,
       0,
     ),
@@ -139,7 +140,7 @@ while (
 }
 if (once) {
   const render = () => stripVTControlCharacters(row.render(100).join("\n"));
-  console.log(`Live model: ${config.provider}/${config.model}`);
+  console.log(`Live model: ${model.provider}/${model.id}`);
   console.log(`Summary time: ${Date.now() - started} ms`);
   console.log("\nCOLLAPSED VIEW");
   console.log(render());

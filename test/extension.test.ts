@@ -31,7 +31,12 @@ test("extension summarizes codemode activated after session start without replac
   process.env.PI_CODING_AGENT_DIR = cwd;
   await writeFile(
     join(cwd, "settings.json"),
-    JSON.stringify({ toolSummaries: { minCommandChars: 0 } }),
+    JSON.stringify({
+      toolSummaries: {
+        model: "openrouter/anthropic/claude-haiku-5.5",
+        minCommandChars: 0,
+      },
+    }),
   );
   const handlers = new Map<string, Function>();
   const records: unknown[] = [];
