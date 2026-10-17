@@ -7,6 +7,17 @@ import { readConfig } from "../src/config.js";
 
 const signal = () => new AbortController().signal;
 
+test("credential readiness can be cancelled without waiting for an uncooperative resolver", async () => {
+  const controller = new AbortController();
+  const ready = authenticationIssue(
+    { getApiKeyAndHeaders: async () => new Promise(() => {}) } as any,
+    {} as any,
+    controller.signal,
+  );
+  controller.abort();
+  assert.equal(await ready, "Credential check timed out or cancelled");
+});
+
 test("readiness uses request-time Pi auth, accepts keyless endpoints and withholds secrets", async () => {
   for (const auth of [
     { ok: true, apiKey: "oauth-refreshed-token" },

@@ -127,6 +127,27 @@ const call = (id: string) => ({
   },
 });
 
+test("persistent disable can be overridden for the runtime only", async () => {
+  const f = await fixture({ enabled: false });
+  try {
+    f.start("disabled");
+    await delay(5);
+    await f.command("backfill");
+    assert.match(f.notices.at(-1)!, /paused/);
+    assert.equal(f.calls.length, 0);
+    await f.command("on");
+    f.start("enabled");
+    await delay(5);
+    assert.equal(f.calls.length, 1);
+    f.restart();
+    f.start("disabled-again");
+    await delay(5);
+    assert.equal(f.calls.length, 1);
+  } finally {
+    await f.close();
+  }
+});
+
 test("missing auth is diagnosed once, no generation is sent, retry after login recovers", async () => {
   const f = await fixture();
   try {

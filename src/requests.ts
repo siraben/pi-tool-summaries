@@ -10,14 +10,30 @@ type Model = NonNullable<ReturnType<ModelRegistry["find"]>>;
 export async function authenticationIssue(
   registry: ModelRegistry,
   model: Model,
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   // Custom/older registries may offer only request-time resolution.
   if (typeof registry.getApiKeyAndHeaders !== "function") return;
+  let abort: (() => void) | undefined;
   try {
-    const auth = await registry.getApiKeyAndHeaders(model);
+    signal?.throwIfAborted();
+    const cancelled = new Promise<never>((_, reject) => {
+      if (signal) {
+        abort = () => reject(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+      }
+    });
+    const auth = await Promise.race([
+      registry.getApiKeyAndHeaders(model),
+      cancelled,
+    ]);
     if (!auth.ok) return "Provider authentication unavailable";
   } catch {
-    return "Provider authentication unavailable";
+    return signal?.aborted
+      ? "Credential check timed out or cancelled"
+      : "Provider authentication unavailable";
+  } finally {
+    if (abort) signal?.removeEventListener("abort", abort);
   }
 }
 
@@ -77,7 +93,7 @@ export class Requests {
     if (this.warnings.has(key)) return;
     this.warnings.add(key);
     warn(
-      `Tool summaries: ${issue}. Use /login for the selected provider, then /tool-summaries retry, or /reload. No other model will be used.`,
+      `Tool summaries: ${issue}. Check /tool-summaries and /model; use /login if credentials are missing, or wait for provider recovery. Run /tool-summaries retry after fixing the problem, or /reload. No other model will be used.`,
     );
   }
 
@@ -97,7 +113,7 @@ export class Requests {
   wrap(
     key: string,
     generate: Generate,
-    checkAuth: () => Promise<string | undefined>,
+    checkAuth: (signal: AbortSignal) => Promise<string | undefined>,
     warn: (text: string) => void,
   ): Generate {
     return async (input, signal) => {
@@ -105,7 +121,7 @@ export class Requests {
       if (cooling) throw new SummaryFailure(cooling);
       this.checkBudget();
       try {
-        const issue = await checkAuth();
+        const issue = await checkAuth(signal);
         signal.throwIfAborted();
         if (issue) throw new SummaryFailure(issue, undefined, "authentication");
         // Recheck after asynchronous auth so parallel calls cannot overrun the cap.

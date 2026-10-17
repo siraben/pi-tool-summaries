@@ -2,17 +2,17 @@
 
 ![Before: a fail-fast Bash workflow that bootstraps RISC-V stage0 tools under QEMU. After: its Haiku 5.5-generated plain-language summary.](docs/before-after.svg)
 
-Plain-language summaries of Bash and codemode tool calls.
+Plain-language summaries of Bash, PowerShell and codemode tool calls.
 
 ## Install
 
-Requires **Pi 0.84.4+** and Node 22.19+. Codemode summaries require Pi 1.0.1+; Bash summaries continue to work on earlier supported releases. Tested with Pi 0.84.4, 0.99.2, and 1.0.4.
+Requires **Pi 0.84.4+ (<2)** and Node 22.19+ (Node 24 also supported). PowerShell and codemode summaries require Pi 1.0.1+; Bash summaries continue to work on earlier supported releases. CI covers the pinned Pi 1.0.1 and Pi 0.84.4, 0.99.2, and 1.3.0. See [compatibility and testing](docs/compatibility.md) for the OS matrix and its limits.
 
 ```sh
 pi install npm:pi-tool-summaries
 ```
 
-Restart Pi or run `/reload`. Use `/tool-summaries` to inspect the effective model and status. When Pi's `codemode` tool is active, its JavaScript calls are summarized alongside Bash calls.
+Restart Pi or run `/reload`. Use `/tool-summaries` to inspect the effective model and status. Visible built-in Bash and PowerShell calls are summarized; when Pi's `codemode` tool is active, its JavaScript calls are summarized too.
 
 **Privacy and cost:** eligible calls send their full arguments (including the command/script and any inline credentials, internal URLs, or proprietary code) to the selected summary provider. Tool results and conversation history are not sent by this extension. Summaries add model requests and may incur provider charges or consume subscription quota. The default reuses your current Pi model; a dedicated model is an additional disclosure destination. Use `/tool-summaries off` to pause requests, or `"toolSummaries": { "enabled": false }` to disable them persistently.
 
@@ -20,7 +20,7 @@ Restart Pi or run `/reload`. Use `/tool-summaries` to inspect the effective mode
 
 The compiler-binary comparison below shows an existing command and its summary from this README.
 
-Press **Ctrl+O** to expand the original command; tool results remain unchanged.
+Press **Ctrl+O** to expand the original command; tool results remain unchanged. Summaries describe intended actions, not verified execution or a safety audit. Inspect the original before relying on a description, particularly for destructive commands.
 
 ### Compare compiler binaries
 
@@ -176,11 +176,11 @@ For local models, register a compatible endpoint in Pi's `models.json` and selec
 
 Omit `reasoning` for provider defaults, or choose `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported levels keep the native call; `/tool-summaries` shows the reason.
 
-Bash commands and codemode scripts shorter than `minCommandChars` (150 by default) keep their native view without a summary request. Set it to `0` to summarize every call. Only characters in the command or script itself count.
+Bash/PowerShell commands and codemode scripts shorter than `minCommandChars` (150 by default) keep their native view without a summary request. Set it to `0` to summarize every call. Only characters in the command or script itself count.
 
 Other optional settings: `timeoutMs` (8000), `maxInputChars` (24000), `maxTokens` (1024), `concurrency` (2), and `maxRequests` (0, unlimited).
 
-Only visible built-in Bash calls and active codemode calls in interactive Pi sessions are summarized. Nested calls and replacement Bash tools are skipped. Busy, oversized, or failed requests keep the original view. Successful summaries are saved in Pi’s session JSONL and restored when you reload or resume; with `--no-session`, they stay in memory only. Ctrl+O never makes another request.
+Only visible built-in Bash/PowerShell calls and active codemode calls in interactive Pi sessions are summarized. Print/JSON/RPC/SDK sessions do not generate display summaries. Runtime rendering uses Pi's active theme and preserves native tool results and expanded calls. Nested calls and replacement Bash/PowerShell tools are skipped. Busy, oversized, or failed requests keep the original view. Successful summaries are saved in Pi’s session JSONL and restored when you reload or resume; with `--no-session`, they stay in memory only. Ctrl+O never makes another request.
 
 Summary requests send the selected tool’s arguments, including the full command or script, to the selected provider and incur its normal cost.
 

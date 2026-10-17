@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createGenerate, providerDefaults } from "../src/provider.js";
+import { authenticationIssue } from "../src/requests.js";
 
 test("Pi routes a summary through its native provider and authentication pipeline", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-provider-test-"));
@@ -78,12 +79,19 @@ test("Pi routes a summary through its native provider and authentication pipelin
       tool: "bash",
       arguments: { command: "find src -type f" },
     });
+    const reported: any[] = [];
+    assert.equal(await authenticationIssue(registry, model), undefined);
     const result = await createGenerate(
       registry,
       model,
       220,
+      undefined,
+      (usage) => reported.push(usage),
     )(input, AbortSignal.timeout(5000));
     assert.equal(result, summary);
+    assert.equal(reported.length, 1);
+    assert.equal(reported[0].input, 20);
+    assert.equal(reported[0].output, 10);
     assert.equal(received?.authorization, "Bearer local-test-only");
     assert.equal(received?.body.model, "local-summary");
     assert.deepEqual(received?.body.messages.at(-1).content, [
@@ -150,6 +158,38 @@ test("Pi routes a summary through its native provider and authentication pipelin
         effort: reasoning === "off" ? "none" : reasoning,
       });
     }
+    // OpenAI-compatible local servers can use a dummy key, as in Pi's models docs.
+    runtime.registerProvider("keyless-test", {
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+      api: "openai-completions",
+      authHeader: false,
+      apiKey: "local-placeholder",
+      models: [
+        {
+          id: "local-summary",
+          name: "Keyless local test",
+          reasoning: false,
+          input: ["text"],
+          contextWindow: 32768,
+          maxTokens: 512,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+      ],
+    });
+    const keyless = registry.find("keyless-test", "local-summary");
+    assert.ok(keyless);
+    assert.equal(await authenticationIssue(registry, keyless), undefined);
+    assert.equal(
+      await createGenerate(
+        registry,
+        keyless,
+        220,
+      )(input, AbortSignal.timeout(5000)),
+      summary,
+    );
+    assert.ok(
+      [undefined, "Bearer local-placeholder"].includes(received?.authorization),
+    );
     const beforeUnsupported = requests;
     await assert.rejects(
       createGenerate(

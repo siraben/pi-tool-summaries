@@ -12,7 +12,7 @@ import { withSummary, withSummaryRenderers } from "./renderer.js";
 import { authenticationIssue, Requests } from "./requests.js";
 
 const summaryEntryType = "tool-summaries:summary";
-type SummaryTool = "bash" | "codemode";
+type SummaryTool = "bash" | "powershell" | "codemode";
 type ToolRenderers = Pick<
   ToolDefinition<any, any, any>,
   "renderCall" | "renderResult"
@@ -30,7 +30,10 @@ type RendererAPI = ExtensionAPI & {
 function sourceFor(name: string, args: unknown): string | undefined {
   if (!args || typeof args !== "object") return undefined;
   const value = args as { command?: unknown; code?: unknown };
-  if (name === "bash" && typeof value.command === "string")
+  if (
+    (name === "bash" || name === "powershell") &&
+    typeof value.command === "string"
+  )
     return value.command;
   if (name === "codemode" && typeof value.code === "string") return value.code;
   return undefined;
@@ -38,9 +41,11 @@ function sourceFor(name: string, args: unknown): string | undefined {
 
 function toolList(tools: Set<SummaryTool>): string {
   const labels = [...tools].map((tool) =>
-    tool === "bash" ? "Bash" : "codemode",
+    tool === "bash" ? "Bash" : tool === "powershell" ? "PowerShell" : tool,
   );
-  return labels.length === 2 ? `${labels[0]} and ${labels[1]}` : labels[0]!;
+  return labels.length > 1
+    ? `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}`
+    : labels[0]!;
 }
 
 export default function plainToolSummaries(pi: ExtensionAPI): void {
@@ -67,16 +72,17 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
     const original = next();
     if (!original) return original;
     const tool = toolName as SummaryTool;
-    if (tool !== "bash" && tool !== "codemode") return original;
+    if (tool !== "bash" && tool !== "powershell" && tool !== "codemode")
+      return original;
     // After session_start Bash already has the compatibility wrapper registered
     // below. Before session_start (notably Pi's /reload transcript rebuild), keep
     // a lazy wrapper on each historical row so it can bind after state restores.
     if (tool === "bash" && summaries && summarizedTools.has("bash"))
       return original;
     if (
-      tool === "bash" &&
-      pi.getAllTools().find((candidate) => candidate.name === "bash")
-        ?.sourceInfo.source !== "builtin"
+      (tool === "bash" || tool === "powershell") &&
+      pi.getAllTools().find((candidate) => candidate.name === tool)?.sourceInfo
+        .source !== "builtin"
     )
       return original;
     return withSummaryRenderers(
@@ -110,7 +116,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         config!.reasoning,
         (usage) => service.recordUsage(usage),
       ),
-      () => authenticationIssue(ctx.modelRegistry, model),
+      (signal) => authenticationIssue(ctx.modelRegistry, model, signal),
       (text) => ctx.ui.notify(text, "warning"),
     );
   };
@@ -150,13 +156,24 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         summarizedTools.add("bash");
       else issues.push("Skipped replacement Bash tool");
     }
+    // Wrap native PowerShell in place: never recreate its execution/configuration.
+    if (activeTools.has("powershell")) {
+      if (!canWrapCodemode)
+        issues.push("PowerShell summaries require Pi 1.0.1+");
+      else if (
+        pi.getAllTools().find((tool) => tool.name === "powershell")?.sourceInfo
+          .source === "builtin"
+      )
+        summarizedTools.add("powershell");
+      else issues.push("Skipped replacement PowerShell tool");
+    }
     // MCP servers can activate codemode after session_start, so enable its
     // summary path whenever this Pi release can wrap the native renderer.
     if (canWrapCodemode) summarizedTools.add("codemode");
     else if (activeTools.has("codemode"))
       issues.push("Codemode summaries require Pi 1.0.1+");
     if (!summarizedTools.size) {
-      status = issues[0] ?? "Bash and codemode are inactive";
+      status = issues[0] ?? "Bash, PowerShell and codemode are inactive";
       finishRendererBinding();
       return;
     }
@@ -362,6 +379,8 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         }
         return;
       }
+      const currentRequests = requests;
+      const currentSummaries = summaries;
       const model = summaryModel(ctx);
       const selection = model
         ? `${model.provider}/${model.id}`
@@ -389,7 +408,11 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         const issue =
           reasoningIssue(model, config.reasoning) ??
           requests.status(requestKey(model)) ??
-          (await authenticationIssue(ctx.modelRegistry, model));
+          (await authenticationIssue(
+            ctx.modelRegistry,
+            model,
+            AbortSignal.timeout(config.timeoutMs),
+          ));
         lines.push(
           `Readiness: ${issue ?? "credentials resolved; model access, credits and endpoint availability are checked on request"}`,
         );
@@ -400,6 +423,8 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         lines.push(summaries.lastPersistenceIssue);
       if (summaries?.lastIssue)
         lines.push(`Last fallback: ${summaries.lastIssue}`);
+      if (requests !== currentRequests || summaries !== currentSummaries)
+        return;
       ctx.ui.notify(lines.join("\n"), "info");
     },
   });

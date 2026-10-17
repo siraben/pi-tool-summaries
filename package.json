@@ -2,7 +2,7 @@
   "name": "pi-tool-summaries",
   "version": "0.1.0",
   "type": "module",
-  "description": "Plain-language summaries of tool calls.",
+  "description": "Plain-language summaries of Bash, PowerShell and codemode tool calls.",
   "pi": {
     "extensions": [
       "./src/index.ts"
@@ -11,6 +11,9 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
+    "test:portable": "tsx --test test/backfill.test.ts test/config.test.ts test/controls.test.ts test/failures.test.ts test/persistence.test.ts test/privacy.test.ts test/provider.test.ts test/requests.test.ts test/summaries.test.ts test/renderer.test.ts test/powershell.test.ts",
+    "test:package": "tsx scripts/package-smoke.ts",
+    "prepublishOnly": "npm run check && npm test && npm run format:check && npm run test:package",
     "test:live": "tsx scripts/live-smoke.ts",
     "demo": "tsx scripts/demo.ts",
     "format": "prettier --write src test scripts package.json tsconfig.json README.md .github",
@@ -46,6 +49,7 @@
     "src/",
     "README.md",
     "docs/before-after.svg",
+    "docs/compatibility.md",
     "LICENSE"
   ],
   "engines": {
