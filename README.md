@@ -91,6 +91,14 @@ PY
 
 > Comparing the first self-host timings of 12 Blynn ablation variants against the control mean and spread, asserting that every TinyCC artifact and normalized hash matches (aborting if not), and totaling each variant's per-step durations by category from its TSV file.
 
+## Readiness and recovery
+
+Run `/tool-summaries` to see the selected model, credential readiness, and the last safe failure reason. Readiness resolves credentials through Pi (including supported OAuth refresh); it is **not** a network/billing probe. Raw provider errors and credentials are never displayed.
+
+Authentication/access errors and HTTP 429 responses pause requests to that model for 60 seconds. Three consecutive provider failures also start a cooldown. A problem is notified once per model per runtime session, not once per tool call. No automatic retries or model/provider fallbacks are made. Tool execution and the original view continue normally.
+
+After `/login`, fixing configuration, or waiting for provider recovery, run `/tool-summaries retry` to clear cooldowns immediately, or `/reload`. Otherwise the next eligible call after cooldown expiry tries again. `retry` does not execute old commands or regenerate old summaries; use backfill for those.
+
 ## Backfill earlier calls
 
 Run `/tool-summaries backfill` to generate missing summaries in the last 100

@@ -1,0 +1,129 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { authenticationIssue, Requests } from "../src/requests.js";
+import { providerFailure } from "../src/failures.js";
+
+const signal = () => new AbortController().signal;
+
+test("readiness uses request-time Pi auth, accepts keyless endpoints and withholds secrets", async () => {
+  for (const auth of [
+    { ok: true, apiKey: "oauth-refreshed-token" },
+    {
+      ok: true,
+      headers: { "x-custom-key": "private" },
+      baseUrl: "https://proxy.invalid",
+    },
+    { ok: true, headers: {} },
+  ]) {
+    const registry = {
+      hasConfiguredAuth() {
+        assert.fail("Credential discovery is not an auth gate");
+      },
+      getApiKeyAndHeaders: async () => auth,
+    };
+    assert.equal(
+      await authenticationIssue(registry as any, {} as any),
+      undefined,
+    );
+  }
+  assert.equal(
+    await authenticationIssue(
+      {
+        getApiKeyAndHeaders: async () => ({
+          ok: false,
+          error: "Bearer private-token",
+        }),
+      } as any,
+      {} as any,
+    ),
+    "Provider authentication unavailable",
+  );
+  assert.equal(
+    await authenticationIssue(
+      {
+        getApiKeyAndHeaders: async () => {
+          throw new Error("private auth command");
+        },
+      } as any,
+      {} as any,
+    ),
+    "Provider authentication unavailable",
+  );
+});
+
+test("auth and rate-limit cooldowns are per model, warn once, and recover on retry or expiry", async () => {
+  let now = 0,
+    authChecks = 0,
+    calls = 0;
+  let authMissing = true;
+  const warnings: string[] = [];
+  const requests = new Requests(() => now, 1000);
+  const generate = requests.wrap(
+    "p/a",
+    async () => {
+      calls++;
+      return "Reading files.";
+    },
+    async () => {
+      authChecks++;
+      return authMissing ? "Provider authentication unavailable" : undefined;
+    },
+    (text) => warnings.push(text),
+  );
+  await assert.rejects(generate("{}", signal()), /authentication unavailable/);
+  authMissing = false;
+  await assert.rejects(generate("{}", signal()), /cooldown/);
+  assert.equal(authChecks, 1);
+  assert.equal(calls, 0);
+  assert.equal(warnings.length, 1);
+  requests.reset();
+  assert.equal(await generate("{}", signal()), "Reading files.");
+  assert.equal(calls, 1);
+  const limited = requests.wrap(
+    "p/a",
+    async () => {
+      throw providerFailure({ status: 429, message: "Bearer private" });
+    },
+    async () => undefined,
+    (text) => warnings.push(text),
+  );
+  await assert.rejects(limited("{}", signal()), /rate limited/);
+  assert.match(requests.status("p/a")!, /cooldown/);
+  assert.equal(requests.status("p/b"), undefined);
+  now = 1001;
+  assert.equal(await generate("{}", signal()), "Reading files.");
+  assert.equal(requests.status("p/a"), undefined);
+  assert.ok(warnings.every((text) => !text.includes("private")));
+});
+
+test("repeated provider failures cool down; cancellations do not poison model health", async () => {
+  const requests = new Requests(() => 0, 1000);
+  const warnings: string[] = [];
+  let calls = 0;
+  const generate = requests.wrap(
+    "p/a",
+    async () => {
+      calls++;
+      throw providerFailure({ status: 503 });
+    },
+    async () => undefined,
+    (text) => warnings.push(text),
+  );
+  for (let i = 0; i < 3; i++)
+    await assert.rejects(generate("{}", signal()), /503/);
+  await assert.rejects(generate("{}", signal()), /cooldown/);
+  assert.equal(calls, 3);
+  assert.equal(warnings.length, 1);
+  const controller = new AbortController();
+  controller.abort();
+  const cancelled = requests.wrap(
+    "p/b",
+    async () => {
+      assert.fail("No cancelled request");
+    },
+    async () => undefined,
+    (text) => warnings.push(text),
+  );
+  await assert.rejects(cancelled("{}", controller.signal));
+  assert.equal(requests.status("p/b"), undefined);
+});
