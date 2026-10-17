@@ -47,6 +47,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
   let summaries: Summaries | undefined;
   const summarizedTools = new Set<SummaryTool>();
   let backfilling: Summaries | undefined;
+  let backfillAbort: AbortController | undefined;
   let status = "Not initialized";
   let config: Config | undefined;
   let requests = new Requests();
@@ -112,6 +113,8 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
     );
 
   pi.on("session_start", (_event, ctx) => {
+    backfillAbort?.abort();
+    backfillAbort = undefined;
     summaries?.dispose();
     requests = new Requests();
     summaries = undefined;
@@ -182,7 +185,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       ("parentToolCallId" in event && event.parentToolCallId) ||
       !summarizedTools.has(event.toolName as SummaryTool) ||
       !summaries ||
-      !config
+      !config?.enabled
     )
       return;
     const source = sourceFor(event.toolName, event.args);
@@ -215,11 +218,32 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
       generateFor(ctx, model),
     );
   });
-  pi.on("session_shutdown", () => summaries?.dispose());
+  pi.on("session_shutdown", () => {
+    backfillAbort?.abort();
+    summaries?.dispose();
+  });
   pi.registerCommand("tool-summaries", {
     description:
       "Show status, retry after login, or backfill [count] [--force] recent messages",
     handler: async (args: string, ctx: ExtensionContext) => {
+      const action = args.trim();
+      if (["on", "off", "toggle"].includes(action)) {
+        if (!config || !summaries) {
+          ctx.ui.notify(`Cannot change summaries: ${status}`, "warning");
+          return;
+        }
+        config.enabled =
+          action === "toggle" ? !config.enabled : action === "on";
+        if (!config.enabled) {
+          backfillAbort?.abort();
+          summaries.cancelAll();
+        }
+        ctx.ui.notify(
+          `Summary requests ${config.enabled ? "enabled" : "paused"} for this runtime session; saved summaries remain visible`,
+          "info",
+        );
+        return;
+      }
       if (args.trim() === "retry") {
         requests.reset();
         ctx.ui.notify(
@@ -242,8 +266,11 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
           return;
         }
         const service = summaries;
-        if (!summarizedTools.size || !service || !config) {
-          ctx.ui.notify(`Cannot backfill: ${status}`, "warning");
+        if (!summarizedTools.size || !service || !config?.enabled) {
+          ctx.ui.notify(
+            `Cannot backfill: ${config?.enabled === false ? "summary requests paused" : status}`,
+            "warning",
+          );
           return;
         }
         if (backfilling === service) {
@@ -281,6 +308,8 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
           });
         const generate = generateFor(ctx, model);
         backfilling = service;
+        const controller = new AbortController();
+        backfillAbort = controller;
         ctx.ui.notify(
           `Backfilling ${calls.length} eligible tool calls from ${messages.length} messages${force ? "; regenerating existing summaries" : ""}…`,
           "info",
@@ -295,6 +324,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
               call.arguments,
               generate,
               force,
+              controller.signal,
             );
             if (result === "cancelled" || summaries !== service) return;
             totals[result]++;
@@ -308,6 +338,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
           );
         } finally {
           if (backfilling === service) backfilling = undefined;
+          if (backfillAbort === controller) backfillAbort = undefined;
         }
         return;
       }
@@ -323,6 +354,7 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
             : "default";
       const lines = [
         `Tool summaries: ${selection} (${modelSource}); reasoning: ${config?.reasoning ?? "provider default"}; ${status}`,
+        `Requests: ${config?.enabled ? "enabled" : "paused"}; exclusions: ${config?.exclude.length ?? 0}`,
         `Storage: ${ctx.sessionManager.getSessionFile() ? "Pi session" : "memory only (ephemeral session)"}`,
       ];
       if (model && summarizedTools.size && config) {

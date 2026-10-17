@@ -16,7 +16,9 @@ export const defaultSummaryModel = "current";
 export interface Config {
   provider?: string;
   model?: string;
-  modelSource: "default" | "configured" | "current";
+  modelSource: "configured" | "current";
+  enabled: boolean;
+  exclude: string[];
   reasoning?: ReasoningLevel;
   minCommandChars: number;
   timeoutMs: number;
@@ -34,6 +36,8 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
   const value = raw as Record<string, unknown>;
   const allowed = [
     "model",
+    "enabled",
+    "exclude",
     "reasoning",
     "minCommandChars",
     "timeoutMs",
@@ -63,6 +67,20 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
     throw new Error(
       `toolSummaries.reasoning must be one of: ${reasoningLevels.join(", ")}`,
     );
+  if (value.enabled !== undefined && typeof value.enabled !== "boolean")
+    throw new Error("toolSummaries.enabled must be a boolean");
+  if (
+    value.exclude !== undefined &&
+    (!Array.isArray(value.exclude) ||
+      value.exclude.length > 100 ||
+      value.exclude.some(
+        (part) =>
+          typeof part !== "string" || !part.length || part.length > 1000,
+      ))
+  )
+    throw new Error(
+      "toolSummaries.exclude must contain at most 100 non-empty literal strings (up to 1000 characters each)",
+    );
   let provider: string | undefined;
   let model: string | undefined;
   let modelSource: Config["modelSource"] = "current";
@@ -85,6 +103,8 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
     provider,
     model,
     modelSource,
+    enabled: value.enabled !== false,
+    exclude: [...((value.exclude as string[] | undefined) ?? [])],
     reasoning: value.reasoning as ReasoningLevel | undefined,
     minCommandChars: integer("minCommandChars", 150, 0, 200000),
     timeoutMs: integer("timeoutMs", 8000, 100, 60000),

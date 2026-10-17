@@ -45,6 +45,28 @@ function validatedSummary(text: string): string {
   return summary;
 }
 
+/** Wait without retaining an abort listener after completion or cancellation. */
+async function waitFor(
+  task: Promise<unknown>,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (!signal) {
+    await task;
+    return true;
+  }
+  if (signal.aborted) return false;
+  let abort!: () => void;
+  const cancelled = new Promise<boolean>((resolve) => {
+    abort = () => resolve(false);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    return await Promise.race([task.then(() => true), cancelled]);
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+}
+
 /** Session-scoped display state backed by Pi session entries. */
 export class Summaries {
   // Pi retains transcript rows for the session, so retain their invalidators too;
@@ -138,11 +160,18 @@ export class Summaries {
     args: unknown,
     generate: Generate,
     force = false,
+    signal?: AbortSignal,
   ): Promise<"generated" | "skipped" | "failed" | "cancelled"> {
-    while (!this.disposed) {
+    if (
+      this.config.exclude.some((part) =>
+        JSON.stringify({ tool: name, arguments: args }).includes(part),
+      )
+    )
+      return "skipped";
+    while (!this.disposed && !signal?.aborted && this.config.enabled) {
       const existing = this.active.get(id);
       if (existing) {
-        await existing;
+        if (!(await waitFor(existing, signal))) return "cancelled";
         continue;
       }
       const e = this.entry(id);
@@ -150,15 +179,17 @@ export class Summaries {
       const matches = e.fingerprint === expectedFingerprint;
       if (e.status === "ready" && matches && !force) return "skipped";
       if (this.controllers.size >= this.config.concurrency) {
-        await Promise.race(this.active.values());
+        if (!(await waitFor(Promise.race(this.active.values()), signal)))
+          return "cancelled";
         continue;
       }
       e.status = "idle";
       // Keep a matching prior summary visible unless its forced replacement succeeds.
       if (!matches) e.summary = undefined;
-      this.start(id, name, args, undefined, generate);
-      await this.active.get(id);
-      if (this.disposed) return "cancelled";
+      this.start(id, name, args, signal, generate);
+      const active = this.active.get(id);
+      if (active && !(await waitFor(active, signal))) return "cancelled";
+      if (this.disposed || signal?.aborted) return "cancelled";
       return (e.status as string) === "ready" ? "generated" : "failed";
     }
     return "cancelled";
@@ -177,6 +208,14 @@ export class Summaries {
     if (e.status !== "idle") return;
     e.fingerprint = fingerprint(name, args);
     const input = JSON.stringify({ tool: name, arguments: args });
+    if (
+      !this.config.enabled ||
+      this.config.exclude.some((part) => input.includes(part))
+    ) {
+      e.status = "unavailable";
+      this.lastIssue = "Summary disabled or excluded by privacy settings";
+      return;
+    }
     if (input.length > this.config.maxInputChars || parentSignal?.aborted) {
       e.status = "unavailable";
       this.lastIssue = parentSignal?.aborted
@@ -251,13 +290,15 @@ export class Summaries {
     }
   }
 
+  cancelAll(reason = "Summary cancelled by session pause"): void {
+    for (const controller of this.controllers)
+      controller.abort(new SummaryFailure(reason));
+  }
+
   dispose(): void {
     this.disposed = true;
     this.entries.clear();
     this.saved.clear();
-    for (const controller of this.controllers)
-      controller.abort(
-        new SummaryFailure("Summary cancelled on session shutdown"),
-      );
+    this.cancelAll("Summary cancelled on session shutdown");
   }
 }

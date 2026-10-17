@@ -14,6 +14,8 @@ pi install npm:pi-tool-summaries
 
 Restart Pi or run `/reload`. Use `/tool-summaries` to inspect the effective model and status. When Pi's `codemode` tool is active, its JavaScript calls are summarized alongside Bash calls.
 
+**Privacy and cost:** eligible calls send their full arguments (including the command/script and any inline credentials, internal URLs, or proprietary code) to the selected summary provider. Tool results and conversation history are not sent by this extension. Summaries add model requests and may incur provider charges or consume subscription quota. The default reuses your current Pi model; a dedicated model is an additional disclosure destination. Use `/tool-summaries off` to pause requests, or `"toolSummaries": { "enabled": false }` to disable them persistently.
+
 ## Before and after
 
 The compiler-binary comparison below shows an existing command and its summary from this README.
@@ -90,6 +92,23 @@ PY
 **After:**
 
 > Comparing the first self-host timings of 12 Blynn ablation variants against the control mean and spread, asserting that every TinyCC artifact and normalized hash matches (aborting if not), and totaling each variant's per-step durations by category from its TSV file.
+
+## Privacy controls
+
+`/tool-summaries off`, `on`, or `toggle` changes request generation for the current runtime session only. Pausing cancels in-flight requests and queued backfill; it cannot undo data already sent or provider billing. Saved summaries remain visible. Reloading or switching sessions restores the configured `enabled` value.
+
+For persistent controls in Pi settings:
+
+```json
+{
+  "toolSummaries": {
+    "enabled": true,
+    "exclude": ["Authorization", "PRIVATE_INTERNAL_HOST", "confidential/"]
+  }
+}
+```
+
+`exclude` is an array of case-sensitive **literal substrings**, not regular expressions or path globs. A match anywhere in the serialized tool arguments skips the whole request, including forced backfill. Strings with quotes, backslashes or newlines must match their JSON-serialized representation. Trusted project settings replace the global exclusion array rather than extending it. At most 100 entries of 1–1000 characters are accepted. This is not a secret detector: it cannot guarantee redaction or safe disclosure. Prefer disabling summaries for sensitive projects rather than relying on patterns.
 
 ## Readiness and recovery
 
