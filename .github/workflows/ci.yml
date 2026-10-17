@@ -26,7 +26,7 @@ jobs:
       - run: npx --yes npm@12.2.0 ci --ignore-scripts
       - run: npm audit
         if: matrix.os == 'ubuntu-latest' && matrix.node == 22
-      - run: npm run prepublishOnly
+      - run: npx --yes npm@12.2.0 run prepublishOnly
   compatibility:
     runs-on: ubuntu-latest
     strategy:

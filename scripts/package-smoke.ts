@@ -11,9 +11,13 @@ assert.ok(npmCli, "Run via npm run test:package");
 const npm = (...args: string[]) =>
   execFileSync(process.execPath, [npmCli, ...args], { encoding: "utf8" });
 try {
-  const [packed] = JSON.parse(
+  const result = JSON.parse(
     npm("pack", "--ignore-scripts", "--json", "--pack-destination", temp),
   );
+  const packed = Array.isArray(result)
+    ? result[0]
+    : result["pi-tool-summaries"];
+  assert.ok(packed?.filename, "npm pack did not report a tarball");
   npm(
     "install",
     "--prefix",
