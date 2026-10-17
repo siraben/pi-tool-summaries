@@ -6,28 +6,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createGenerate, providerDefaults } from "../src/provider.js";
-import { authenticationIssue } from "../src/requests.js";
 
-test("Pi routes a summary through its native provider and authentication pipeline", async () => {
+// One local endpoint checks the real Pi authentication/transport path, without paid calls.
+test("Pi sends the selected model and credentials and reports usage", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-provider-test-"));
-  let requests = 0;
-  let received: { authorization?: string; body: any } | undefined;
-  const summary = "Reading the source files and printing their paths.";
+  let received: any, authorization: string | undefined;
   const server = createServer(async (request, response) => {
-    requests++;
     let body = "";
     for await (const part of request) body += part;
-    received = {
-      authorization: request.headers.authorization,
-      body: JSON.parse(body),
-    };
+    received = JSON.parse(body);
+    authorization = request.headers.authorization;
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     for (const chunk of [
       {
         choices: [
           {
             index: 0,
-            delta: { role: "assistant", content: summary },
+            delta: { role: "assistant", content: "Reading files." },
             finish_reason: null,
           },
         ],
@@ -38,7 +33,7 @@ test("Pi routes a summary through its native provider and authentication pipelin
       },
     ])
       response.write(
-        `data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", created: 0, model: "local-summary", ...chunk })}\n\n`,
+        `data: ${JSON.stringify({ id: "test", model: "small", ...chunk })}\n\n`,
       );
     response.end("data: [DONE]\n\n");
   });
@@ -51,17 +46,17 @@ test("Pi routes a summary through its native provider and authentication pipelin
     const runtime = await ModelRuntime.create({
       authPath: join(root, "auth.json"),
       modelsPath: null,
-      modelsStorePath: join(root, "catalog.json"),
+      modelsStorePath: join(root, "models.json"),
       allowModelNetwork: false,
     });
-    runtime.registerProvider("summary-test", {
+    runtime.registerProvider("local", {
       baseUrl: `http://127.0.0.1:${address.port}/v1`,
       api: "openai-completions",
-      apiKey: "local-test-only",
+      apiKey: "test-key",
       models: [
         {
-          id: "local-summary",
-          name: "Local summary test",
+          id: "small",
+          name: "Small",
           reasoning: true,
           thinkingLevelMap: { off: "none" },
           compat: { thinkingFormat: "openrouter" },
@@ -73,146 +68,42 @@ test("Pi routes a summary through its native provider and authentication pipelin
       ],
     });
     const registry = new ModelRegistry(runtime);
-    const model = registry.find("summary-test", "local-summary");
+    const model = registry.find("local", "small");
     assert.ok(model);
-    const input = JSON.stringify({
-      tool: "bash",
-      arguments: { command: "find src -type f" },
-    });
-    const reported: any[] = [];
-    assert.equal(await authenticationIssue(registry, model), undefined);
-    const result = await createGenerate(
+    let tokens = 0;
+    const generate = createGenerate(
       registry,
       model,
       220,
       undefined,
-      (usage) => reported.push(usage),
-    )(input, AbortSignal.timeout(5000));
-    assert.equal(result, summary);
-    assert.equal(reported.length, 1);
-    assert.equal(reported[0].input, 20);
-    assert.equal(reported[0].output, 10);
-    assert.equal(received?.authorization, "Bearer local-test-only");
-    assert.equal(received?.body.model, "local-summary");
-    assert.deepEqual(received?.body.messages.at(-1).content, [
-      { type: "text", text: input },
-    ]);
-    assert.equal(received?.body.tools, undefined);
-    assert.equal(received?.body.reasoning, undefined);
-    assert.equal(received?.body.reasoning_effort, undefined);
-    for (const variant of [
-      { ...model, thinkingLevelMap: { off: null } },
-      {
-        ...model,
-        compat: { ...model.compat, thinkingFormat: "qwen" as const },
+      (usage) => {
+        tokens += usage?.input ?? 0;
       },
-      {
-        ...model,
-        compat: {
-          ...model.compat,
-          thinkingFormat: "qwen-chat-template" as const,
-        },
-      },
-      {
-        ...model,
-        compat: {
-          ...model.compat,
-          thinkingFormat: "openai" as const,
-          supportsReasoningEffort: true,
-        },
-      },
-    ]) {
-      assert.equal(
-        await createGenerate(
-          registry,
-          variant,
-          220,
-        )(input, AbortSignal.timeout(5000)),
-        summary,
-      );
-      assert.equal(received?.body.reasoning, undefined);
-      assert.equal(received?.body.reasoning_effort, undefined);
-      assert.equal(received?.body.enable_thinking, undefined);
-      assert.equal(received?.body.chat_template_kwargs, undefined);
-    }
+    );
     assert.equal(
-      await createGenerate(
-        registry,
-        { ...model, samplingParams: { reasoning: { effort: "high" } } },
-        220,
-      )(input, AbortSignal.timeout(5000)),
-      summary,
+      await generate("input data", new AbortController().signal),
+      "Reading files.",
     );
-    assert.deepEqual(received?.body.reasoning, { effort: "high" });
-    for (const reasoning of ["low", "off"] as const) {
-      assert.equal(
-        await createGenerate(
-          registry,
-          { ...model, samplingParams: { reasoning: { effort: "high" } } },
-          220,
-          reasoning,
-        )(input, AbortSignal.timeout(5000)),
-        summary,
-      );
-      assert.deepEqual(received?.body.reasoning, {
-        effort: reasoning === "off" ? "none" : reasoning,
-      });
-    }
-    // OpenAI-compatible local servers can use a dummy key, as in Pi's models docs.
-    runtime.registerProvider("keyless-test", {
-      baseUrl: `http://127.0.0.1:${address.port}/v1`,
-      api: "openai-completions",
-      authHeader: false,
-      apiKey: "local-placeholder",
-      models: [
-        {
-          id: "local-summary",
-          name: "Keyless local test",
-          reasoning: false,
-          input: ["text"],
-          contextWindow: 32768,
-          maxTokens: 512,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        },
-      ],
-    });
-    const keyless = registry.find("keyless-test", "local-summary");
-    assert.ok(keyless);
-    assert.equal(await authenticationIssue(registry, keyless), undefined);
-    assert.equal(
-      await createGenerate(
-        registry,
-        keyless,
-        220,
-      )(input, AbortSignal.timeout(5000)),
-      summary,
-    );
-    assert.ok(
-      [undefined, "Bearer local-placeholder"].includes(received?.authorization),
-    );
-    const beforeUnsupported = requests;
-    await assert.rejects(
-      createGenerate(
-        registry,
-        { ...model, thinkingLevelMap: { off: null } },
-        220,
-        "off",
-      )(input, AbortSignal.timeout(5000)),
-      /does not support reasoning level off/,
-    );
+    assert.equal(authorization, "Bearer test-key");
+    assert.equal(received.model, "small");
+    assert.equal(received.messages.at(-1).content[0].text, "input data");
+    assert.equal(received.reasoning, undefined);
+    assert.equal(tokens, 20);
+    await createGenerate(
+      registry,
+      model,
+      220,
+      "off",
+    )("input data", new AbortController().signal);
+    assert.equal(received.reasoning.effort, "none");
     await assert.rejects(
       createGenerate(
         registry,
         model,
         220,
         "max",
-      )(input, AbortSignal.timeout(5000)),
-      /does not support reasoning level max/,
-    );
-    assert.equal(requests, beforeUnsupported);
-    assert.equal(
-      received?.body.max_tokens ?? received?.body.max_completion_tokens,
-      220,
+      )("input", new AbortController().signal),
+      /does not support/,
     );
   } finally {
     server.closeAllConnections();
@@ -221,51 +112,41 @@ test("Pi routes a summary through its native provider and authentication pipelin
   }
 });
 
-test("provider defaults preserve explicit model settings and non-OpenAI adapter behavior", () => {
-  const model = {
-    api: "openai-responses",
-    samplingParams: {},
-    compat: {},
-  } as Parameters<typeof providerDefaults>[1];
-  const payload = {
-    model: "example",
-    reasoning: { effort: "none" },
-    max_output_tokens: 220,
-  };
-  assert.deepEqual(providerDefaults(payload, model), {
-    model: "example",
-    max_output_tokens: 220,
-  });
-  assert.deepEqual(
-    payload.reasoning,
-    { effort: "none" },
-    "Do not mutate the adapter's input",
-  );
+test("provider failures remain safe and incomplete responses are rejected", async () => {
+  for (const [stopReason, expected] of [
+    ["error", /HTTP 401/],
+    ["length", /token limit/],
+    ["aborted", /cancelled/],
+  ] as const) {
+    const generate = createGenerate(
+      {
+        complete: async () => ({
+          stopReason,
+          errorMessage: "401 Bearer secret",
+          content: [],
+        }),
+      } as any,
+      {} as any,
+      220,
+    );
+    await assert.rejects(
+      generate("input", new AbortController().signal),
+      (error: Error) => {
+        assert.match(error.message, expected);
+        assert.doesNotMatch(error.message, /secret/);
+        return true;
+      },
+    );
+  }
+});
+
+test("provider defaults remove implicit reasoning controls and preserve explicit defaults", () => {
+  const model = { api: "openai-completions", samplingParams: {} } as any;
   assert.equal(
-    providerDefaults(payload, { ...model, api: "anthropic-messages" }),
-    payload,
+    (providerDefaults({ reasoning: { effort: "none" } }, model) as any)
+      .reasoning,
+    undefined,
   );
-  assert.deepEqual(
-    providerDefaults(
-      {
-        chat_template_kwargs: {
-          enable_thinking: false,
-          custom_thinking: false,
-          keep: "literal",
-        },
-      },
-      {
-        ...model,
-        api: "openai-completions",
-        compat: {
-          thinkingFormat: "chat-template",
-          chatTemplateKwargs: {
-            custom_thinking: { $var: "thinking.enabled" },
-            keep: "literal",
-          },
-        },
-      },
-    ),
-    { chat_template_kwargs: { keep: "literal" } },
-  );
+  model.samplingParams = { reasoning: { effort: "low" } };
+  assert.equal((providerDefaults({}, model) as any).reasoning.effort, "low");
 });

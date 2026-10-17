@@ -11,21 +11,16 @@ export const reasoningLevels = [
 ] as const;
 export type ReasoningLevel = (typeof reasoningLevels)[number];
 
-export const defaultSummaryModel = "current";
-
 export interface Config {
   provider?: string;
   model?: string;
-  modelSource: "configured" | "current";
   enabled: boolean;
-  exclude: string[];
   reasoning?: ReasoningLevel;
   minCommandChars: number;
   timeoutMs: number;
   maxInputChars: number;
   maxTokens: number;
   concurrency: number;
-  maxRequests: number;
 }
 
 /** Parse the toolSummaries namespace from Pi's effective settings. */
@@ -38,14 +33,12 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
   const allowed = [
     "model",
     "enabled",
-    "exclude",
     "reasoning",
     "minCommandChars",
     "timeoutMs",
     "maxInputChars",
     "maxTokens",
     "concurrency",
-    "maxRequests",
   ];
   if (Object.keys(value).some((key) => !allowed.includes(key)))
     throw new Error("Unknown toolSummaries setting");
@@ -71,22 +64,9 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
     );
   if (value.enabled !== undefined && typeof value.enabled !== "boolean")
     throw new Error("toolSummaries.enabled must be a boolean");
-  if (
-    value.exclude !== undefined &&
-    (!Array.isArray(value.exclude) ||
-      value.exclude.length > 100 ||
-      value.exclude.some(
-        (part) =>
-          typeof part !== "string" || !part.length || part.length > 1000,
-      ))
-  )
-    throw new Error(
-      "toolSummaries.exclude must contain at most 100 non-empty literal strings (up to 1000 characters each)",
-    );
   let provider: string | undefined;
   let model: string | undefined;
-  let modelSource: Config["modelSource"] = "current";
-  if (value.model !== undefined && value.model !== defaultSummaryModel) {
+  if (value.model !== undefined && value.model !== "current") {
     if (typeof value.model !== "string")
       throw new Error(
         "toolSummaries.model must be current or provider/model-id",
@@ -99,21 +79,17 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
       );
     provider = ref.slice(0, slash);
     model = ref.slice(slash + 1);
-    modelSource = "configured";
   }
   return {
     provider,
     model,
-    modelSource,
     enabled: value.enabled !== false,
-    exclude: [...((value.exclude as string[] | undefined) ?? [])],
     reasoning: value.reasoning as ReasoningLevel | undefined,
     minCommandChars: integer("minCommandChars", 150, 0, 200000),
     timeoutMs: integer("timeoutMs", 8000, 100, 60000),
     maxInputChars: integer("maxInputChars", 24000, 100, 200000),
     maxTokens: integer("maxTokens", 1024, 64, 1024),
     concurrency: integer("concurrency", 2, 1, 8),
-    maxRequests: integer("maxRequests", 0, 0, 1000000),
   };
 }
 

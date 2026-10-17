@@ -7,6 +7,15 @@ import { summaryPrompt } from "./summaries.js";
 
 type SummaryModel = NonNullable<ReturnType<ModelRegistry["find"]>>;
 
+/** Normalized usage supplied by Pi, not a separate billing calculation. */
+export interface SummaryUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: { total: number };
+}
+
 /** Remove Pi's implicit off controls, preserving explicit model sampling defaults. */
 export function providerDefaults(
   payload: unknown,
@@ -76,7 +85,7 @@ export function createGenerate(
   model: SummaryModel,
   maxTokens: number,
   reasoning?: ReasoningLevel,
-  onUsage?: (usage: unknown) => void,
+  onUsage?: (usage: SummaryUsage | undefined) => void,
 ): Generate {
   return async (input, signal) => {
     const issue = reasoningIssue(model, reasoning);

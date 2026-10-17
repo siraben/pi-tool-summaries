@@ -3,7 +3,6 @@ import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { configFromSettings } from "../src/config.js";
 import { createGenerate } from "../src/provider.js";
 import { cleanSummary } from "../src/summaries.js";
-import { authenticationIssue } from "../src/requests.js";
 
 try {
   const settings = SettingsManager.create(process.cwd(), undefined, {
@@ -17,16 +16,9 @@ try {
   const runtime = await ModelRuntime.create({ allowModelNetwork: false });
   const registry = new ModelRegistry(runtime);
   const model = registry.find(provider, modelId);
-  if (
-    !model ||
-    (await authenticationIssue(
-      registry,
-      model,
-      AbortSignal.timeout(config.timeoutMs),
-    ))
-  ) {
+  if (!model) {
     console.error(
-      "Live test needs a known model and a credential configured in Pi or the provider environment. No request sent.",
+      "Live test needs a known model selected in Pi settings. No request sent.",
     );
     process.exitCode = 1;
   } else {
@@ -37,11 +29,7 @@ try {
           "find src -name '*.ts' -not -path '*/generated/*' -print0 | xargs -0 grep -n 'oldApi'",
       },
     });
-    if (
-      input.length > config.maxInputChars ||
-      config.exclude.some((part) => input.includes(part))
-    )
-      throw new Error("input limit or privacy exclusion");
+    if (input.length > config.maxInputChars) throw new Error("input limit");
     const start = Date.now();
     const signal = AbortSignal.timeout(config.timeoutMs);
     const summary = await Promise.race([

@@ -45,28 +45,6 @@ function validatedSummary(text: string): string {
   return summary;
 }
 
-/** Wait without retaining an abort listener after completion or cancellation. */
-async function waitFor(
-  task: Promise<unknown>,
-  signal?: AbortSignal,
-): Promise<boolean> {
-  if (!signal) {
-    await task;
-    return true;
-  }
-  if (signal.aborted) return false;
-  let abort!: () => void;
-  const cancelled = new Promise<boolean>((resolve) => {
-    abort = () => resolve(false);
-    signal.addEventListener("abort", abort, { once: true });
-  });
-  try {
-    return await Promise.race([task.then(() => true), cancelled]);
-  } finally {
-    signal.removeEventListener("abort", abort);
-  }
-}
-
 /** Session-scoped display state backed by Pi session entries. */
 export class Summaries {
   // Pi retains transcript rows for the session, so retain their invalidators too;
@@ -76,6 +54,7 @@ export class Summaries {
   private saved = new Map<string, SavedSummary>();
   private controllers = new Set<AbortController>();
   private disposed = false;
+  private generation = 0;
   private active = new Map<string, Promise<void>>();
   lastIssue?: string;
   lastPersistenceIssue?: string;
@@ -170,18 +149,16 @@ export class Summaries {
     args: unknown,
     generate: Generate,
     force = false,
-    signal?: AbortSignal,
   ): Promise<"generated" | "skipped" | "failed" | "cancelled"> {
-    if (
-      this.config.exclude.some((part) =>
-        JSON.stringify({ tool: name, arguments: args }).includes(part),
-      )
-    )
-      return "skipped";
-    while (!this.disposed && !signal?.aborted && this.config.enabled) {
+    const generation = this.generation;
+    while (
+      !this.disposed &&
+      this.config.enabled &&
+      generation === this.generation
+    ) {
       const existing = this.active.get(id);
       if (existing) {
-        if (!(await waitFor(existing, signal))) return "cancelled";
+        await existing;
         continue;
       }
       const e = this.entry(id);
@@ -189,17 +166,15 @@ export class Summaries {
       const matches = e.fingerprint === expectedFingerprint;
       if (e.status === "ready" && matches && !force) return "skipped";
       if (this.controllers.size >= this.config.concurrency) {
-        if (!(await waitFor(Promise.race(this.active.values()), signal)))
-          return "cancelled";
+        await Promise.race(this.active.values());
         continue;
       }
       e.status = "idle";
       // Keep a matching prior summary visible unless its forced replacement succeeds.
       if (!matches) e.summary = undefined;
-      this.start(id, name, args, signal, generate);
-      const active = this.active.get(id);
-      if (active && !(await waitFor(active, signal))) return "cancelled";
-      if (this.disposed || signal?.aborted) return "cancelled";
+      this.start(id, name, args, undefined, generate);
+      await this.active.get(id);
+      if (this.disposed || generation !== this.generation) return "cancelled";
       return (e.status as string) === "ready" ? "generated" : "failed";
     }
     return "cancelled";
@@ -212,20 +187,12 @@ export class Summaries {
     parentSignal?: AbortSignal,
     generate: Generate = this.generate,
   ): void {
-    if (this.disposed) return;
+    if (this.disposed || !this.config.enabled) return;
     const e = this.entry(id);
     // Rendering never initiates requests. Each actual call is started only once.
     if (e.status !== "idle") return;
     e.fingerprint = fingerprint(name, args);
     const input = JSON.stringify({ tool: name, arguments: args });
-    if (
-      !this.config.enabled ||
-      this.config.exclude.some((part) => input.includes(part))
-    ) {
-      e.status = "unavailable";
-      this.lastIssue = "Summary disabled or excluded by privacy settings";
-      return;
-    }
     if (input.length > this.config.maxInputChars || parentSignal?.aborted) {
       e.status = "unavailable";
       this.lastIssue = parentSignal?.aborted
@@ -301,6 +268,7 @@ export class Summaries {
   }
 
   cancelAll(reason = "Summary cancelled by session pause"): void {
+    this.generation++;
     for (const controller of this.controllers)
       controller.abort(new SummaryFailure(reason));
   }
