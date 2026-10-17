@@ -69,7 +69,7 @@ export function reasoningIssue(
   model: SummaryModel,
   reasoning?: ReasoningLevel,
 ): string | undefined {
-  if (reasoning === undefined) return;
+  if (reasoning === undefined) return undefined;
   if (
     (!model.reasoning && reasoning !== "off") ||
     model.thinkingLevelMap?.[reasoning] === null ||
@@ -77,6 +77,7 @@ export function reasoningIssue(
       model.thinkingLevelMap?.[reasoning] === undefined)
   )
     return `Summary model does not support reasoning level ${reasoning}`;
+  return undefined;
 }
 
 /** Reuse Pi's provider, authentication, endpoint, and transport integration. */
@@ -130,7 +131,7 @@ export function createGenerate(
         const selected = { ...model, samplingParams };
         const simpleOptions = {
           ...options,
-          reasoning: reasoning === "off" ? undefined : reasoning,
+          ...(reasoning === "off" ? {} : { reasoning }),
         };
         type Provider = NonNullable<ReturnType<ModelRegistry["getProvider"]>>;
         const simpleRegistry = registry as ModelRegistry & {
@@ -153,9 +154,11 @@ export function createGenerate(
               context as unknown as Parameters<typeof provider.streamSimple>[1],
               {
                 ...simpleOptions,
-                apiKey: auth.apiKey,
-                headers: auth.headers,
-                env: auth.env,
+                ...(auth.apiKey === undefined ? {} : { apiKey: auth.apiKey }),
+                ...(auth.headers === undefined
+                  ? {}
+                  : { headers: auth.headers }),
+                ...(auth.env === undefined ? {} : { env: auth.env }),
               },
             )
             .result();

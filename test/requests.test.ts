@@ -38,7 +38,7 @@ test("rate-limit failures suppress repeated calls and warn once without exposing
   await assert.rejects(generate("{}", signal()), /cooling down/);
   assert.equal(calls, 1);
   assert.equal(warnings.length, 1);
-  assert.doesNotMatch(warnings[0], /private-key/);
+  assert.doesNotMatch(warnings.join("\n"), /private-key/);
   assert.equal(requests.coolingDown("p/other"), false);
   assert.equal(new Requests().coolingDown("p/model"), false);
 });

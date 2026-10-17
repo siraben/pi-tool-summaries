@@ -187,9 +187,11 @@ export default function plainToolSummaries(pi: ExtensionAPI): void {
         summaries.restore(entry.data);
     }
     if (summarizedTools.has("bash") && !canWrapRenderers) {
+      const commandPrefix = settings.getShellCommandPrefix();
+      const shellPath = settings.getShellPath();
       const bash = createBashToolDefinition(ctx.cwd, {
-        commandPrefix: settings.getShellCommandPrefix(),
-        shellPath: settings.getShellPath(),
+        ...(commandPrefix === undefined ? {} : { commandPrefix }),
+        ...(shellPath === undefined ? {} : { shellPath }),
       });
       pi.registerTool(withSummary(bash, summaries));
     }

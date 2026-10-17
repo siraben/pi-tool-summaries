@@ -95,7 +95,7 @@ test("cancellation prevents late persistence without relying on provider coopera
   response.resolve("Late response.");
   await service.backfill("next", "bash", args, async () => "Printing text.");
   assert.equal(saved.length, 1);
-  assert.equal(saved[0].id, "next");
+  assert.equal(saved[0]?.id, "next");
   service.dispose();
 });
 

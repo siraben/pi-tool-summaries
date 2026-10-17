@@ -81,10 +81,12 @@ export function readConfig(settings: { toolSummaries?: unknown } = {}): Config {
     model = ref.slice(slash + 1);
   }
   return {
-    provider,
-    model,
+    ...(provider === undefined ? {} : { provider }),
+    ...(model === undefined ? {} : { model }),
     enabled: value.enabled !== false,
-    reasoning: value.reasoning as ReasoningLevel | undefined,
+    ...(value.reasoning === undefined
+      ? {}
+      : { reasoning: value.reasoning as ReasoningLevel }),
     minCommandChars: integer("minCommandChars", 150, 0, 200000),
     timeoutMs: integer("timeoutMs", 8000, 100, 60000),
     maxInputChars: integer("maxInputChars", 24000, 100, 200000),
