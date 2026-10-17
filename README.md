@@ -1,6 +1,6 @@
 # Pi Tool Summaries
 
-![Before: the full Bash command from Compare compiler binaries. After: its Haiku 5.5-generated plain-language summary.](docs/before-after.svg)
+![Haiku 5.5-generated summary above the full Bash command from Compare compiler binaries.](docs/before-after.svg)
 
 Plain-language summaries of Bash, PowerShell and codemode tool calls.
 

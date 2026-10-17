@@ -1,11 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="550" viewBox="0 0 1200 550" role="img" aria-labelledby="title desc">
-<title id="title">Comparing compiler binaries: before and after</title>
-<desc id="desc">The full Bash command for comparing compiler binaries above its Haiku 5.5-generated summary. All 15 command lines are shown without wrapping or truncation.</desc>
+<title id="title">Comparing compiler binaries: summary and full command</title>
+<desc id="desc">The Haiku 5.5-generated summary above the full Bash command for comparing compiler binaries. All 15 command lines are shown without wrapping or truncation.</desc>
 <rect width="1200" height="550" rx="20" fill="#101720"/>
-<rect x="20" y="20" width="1160" height="332" rx="12" fill="#192330" stroke="#36465a"/>
+<g transform="translate(0 -352)">
 <rect x="20" y="372" width="1160" height="128" rx="12" fill="#192330" stroke="#36465a"/>
-<text x="40" y="52" font-family="system-ui, sans-serif" font-size="14" fill="#aebdce">BEFORE · FULL BASH COMMAND</text>
 <text x="40" y="402" font-family="system-ui, sans-serif" font-size="14" fill="#83e0b0">AFTER · HAIKU 5.5 SUMMARY</text>
+<text class="summary-line" x="40" y="435" font-family="system-ui, sans-serif" font-size="18" fill="#e2e8f0" xml:space="preserve">Writing a Python script to /tmp that checks three TinyCC binaries across two Nix store outputs, asserts they</text>
+<text class="summary-line" x="40" y="460" font-family="system-ui, sans-serif" font-size="18" fill="#e2e8f0" xml:space="preserve">match after replacing only the store prefix, and saves their sizes and SHA-256 hashes to</text>
+<text class="summary-line" x="40" y="485" font-family="system-ui, sans-serif" font-size="18" fill="#e2e8f0" xml:space="preserve">tinycc-artifacts.json.</text>
+</g>
+<g transform="translate(0 148)">
+<rect x="20" y="20" width="1160" height="332" rx="12" fill="#192330" stroke="#36465a"/>
+<text x="40" y="52" font-family="system-ui, sans-serif" font-size="14" fill="#aebdce">BEFORE · FULL BASH COMMAND</text>
 <text class="command-line" x="40" y="80" font-family="Hack, ui-monospace, SFMono-Regular, Consolas, monospace" font-size="9.5" fill="#e2e8f0" xml:space="preserve"><tspan fill="#d2a8ff">cat</tspan><tspan fill="#e2e8f0"> &gt; /tmp/blynn-structural/compare-tinycc.py &lt;&lt;&#x27;PY&#x27;</tspan></text>
 <text class="command-line" x="40" y="98" font-family="Hack, ui-monospace, SFMono-Regular, Consolas, monospace" font-size="9.5" fill="#e2e8f0" xml:space="preserve"><tspan fill="#a5d6ff">&quot;&quot;&quot;Compare artifacts; normalize only the exact expected installation prefix.&quot;&quot;&quot;</tspan></text>
 <text class="command-line" x="40" y="116" font-family="Hack, ui-monospace, SFMono-Regular, Consolas, monospace" font-size="9.5" fill="#e2e8f0" xml:space="preserve"><tspan fill="#ff7b72">from</tspan><tspan fill="#e2e8f0"> </tspan><tspan fill="#e2e8f0">pathlib</tspan><tspan fill="#e2e8f0"> </tspan><tspan fill="#ff7b72">import</tspan><tspan fill="#e2e8f0"> </tspan><tspan fill="#e2e8f0">Path</tspan></text>
@@ -21,8 +27,6 @@
 <text class="command-line" x="40" y="296" font-family="Hack, ui-monospace, SFMono-Regular, Consolas, monospace" font-size="9.5" fill="#e2e8f0" xml:space="preserve"><tspan fill="#d2a8ff">print</tspan><tspan fill="#79c0ff">(</tspan><tspan fill="#e2e8f0">json</tspan><tspan fill="#79c0ff">.</tspan><tspan fill="#e2e8f0">dumps</tspan><tspan fill="#79c0ff">(</tspan><tspan fill="#d2a8ff">dict</tspan><tspan fill="#79c0ff">(</tspan><tspan fill="#e2e8f0">baseline</tspan><tspan fill="#79c0ff">=</tspan><tspan fill="#d2a8ff">str</tspan><tspan fill="#79c0ff">(</tspan><tspan fill="#e2e8f0">old</tspan><tspan fill="#79c0ff">)</tspan><tspan fill="#79c0ff">,</tspan><tspan fill="#e2e8f0">candidate</tspan><tspan fill="#79c0ff">=</tspan><tspan fill="#d2a8ff">str</tspan><tspan fill="#79c0ff">(</tspan><tspan fill="#e2e8f0">new</tspan><tspan fill="#79c0ff">)</tspan><tspan fill="#79c0ff">,</tspan><tspan fill="#e2e8f0">artifacts</tspan><tspan fill="#79c0ff">=</tspan><tspan fill="#e2e8f0">rows</tspan><tspan fill="#79c0ff">)</tspan><tspan fill="#79c0ff">,</tspan><tspan fill="#e2e8f0">indent</tspan><tspan fill="#79c0ff">=</tspan><tspan fill="#d2a8ff">2</tspan><tspan fill="#79c0ff">)</tspan><tspan fill="#79c0ff">)</tspan></text>
 <text class="command-line" x="40" y="314" font-family="Hack, ui-monospace, SFMono-Regular, Consolas, monospace" font-size="9.5" fill="#e2e8f0" xml:space="preserve"><tspan fill="#a5d6ff">PY</tspan></text>
 <text class="command-line" x="40" y="332" font-family="Hack, ui-monospace, SFMono-Regular, Consolas, monospace" font-size="9.5" fill="#e2e8f0" xml:space="preserve"><tspan fill="#d2a8ff">python3</tspan><tspan fill="#e2e8f0"> /tmp/blynn-structural/compare-tinycc.py &gt; /tmp/blynn-structural/tinycc-artifacts.json</tspan></text>
-<text class="summary-line" x="40" y="435" font-family="system-ui, sans-serif" font-size="18" fill="#e2e8f0" xml:space="preserve">Writing a Python script to /tmp that checks three TinyCC binaries across two Nix store outputs, asserts they</text>
-<text class="summary-line" x="40" y="460" font-family="system-ui, sans-serif" font-size="18" fill="#e2e8f0" xml:space="preserve">match after replacing only the store prefix, and saves their sizes and SHA-256 hashes to</text>
-<text class="summary-line" x="40" y="485" font-family="system-ui, sans-serif" font-size="18" fill="#e2e8f0" xml:space="preserve">tinycc-artifacts.json.</text>
+</g>
 <text x="28" y="530" font-family="system-ui, sans-serif" font-size="16" fill="#aebdce">Compare compiler binaries · Full Bash command · Ctrl+O expands the original call</text>
 </svg>
